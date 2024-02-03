@@ -4,7 +4,7 @@ This module implements the dungeon generation algorithm
 import re
 import sys
 import random
-from typing import List, Tuple, Dict, Set
+from typing import List, Tuple, Dict, Set, Optional
 from dataclasses import dataclass
 from enum import Enum
 
@@ -67,6 +67,11 @@ class Graph:
 
     def remove_node(self, node: str) -> ():
         self._nodes.remove(node)
+        if node in self._edges:
+            del self._edges[node]
+        for v in self._edges.values():
+            if node in v:
+                v.remove(node)
 
     def add_edge(self, n1: str, n2: str, bidirectional = False) -> ():
         if n1 not in self._edges:
@@ -90,8 +95,16 @@ class Graph:
             for n2 in n2s:
                 print(f'• {n1} -> {n2}')
 
-    def get_nodes(self, pattern: str) -> List[str]:
+    def get_nodes_like(self, pattern: str) -> List[str]:
         return list(filter(lambda x: re.match(pattern, x), self._nodes))
+
+    def get_next_nodes(self, node: str, disregard: Optional[str] = None) -> List[str]:
+        if node not in self._edges:
+            return []
+        return list(filter(lambda x: x is not disregard, self._edges[node]))
+
+    def get_nodes(self) -> List[str]:
+        return self._nodes
 
 
 # GENERATE STATE GRAPH SECTION
@@ -134,7 +147,10 @@ def get_all_combinations(list_of_lists: List[List[str]]) -> List[str]:
 
 
 def get_nodes_with_state(state_graph: Graph, state: int, value: str) -> List[str]:
-    return state_graph.get_nodes(f'^([0-9]+[A-Z]+)*{state}{value}([0-9]+[A-Z]+)*$')
+    '''
+    Returns a list of state nodes with the given value for the given state
+    '''
+    return state_graph.get_nodes_like(f'^([0-9]+[A-Z]+)*{state}{value}([0-9]+[A-Z]+)*$')
 
 def modified_state_node(node: str, state: int, value: str) -> str:
     '''
@@ -144,16 +160,16 @@ def modified_state_node(node: str, state: int, value: str) -> str:
     return (before_after[0] if before_after[0] else '') + f'{state}{value}' + (before_after[1] if before_after[1] else '')
 
 
-def random_subset(list: List[str]) -> List[str]:
+def random_subset(lst: List[str]) -> List[str]:
     '''
     Returns a random subset (or at least size 1) of the input list
     '''
     results = []
-    for x in list:
+    for x in lst:
         if random.randint(0,1) == 0:
             results.append(x)
     if len(results) == 0:
-        results.append(list[random.randint(0, len(list) - 1)])
+        results.append(lst[random.randint(0, len(lst) - 1)])
     return results
 
 
@@ -176,6 +192,26 @@ def assign_state_change_edges(state_graph: Graph, state_change: Tuple[StateChang
                 state_graph.add_edge(node, modified_state_node(node, state, value))
 
 
+def take_all_walks(state_graph: Graph, initial: str) -> Tuple[List[str], List[str]]:
+    '''
+    Takes all paths through the graph and returns any dead-ends (leaf nodes) as well as all visited nodes
+    '''
+    leaf_nodes = []
+    all_nodes = []
+    please_visit = [(initial, None)]
+    while len(please_visit) > 0:
+        node, prev = please_visit.pop(0)
+        next_nodes = state_graph.get_next_nodes(node, prev)
+        if len(next_nodes) == 0:
+            leaf_nodes.append(node)
+            continue
+        unvisited_next = list(filter(lambda x: x not in all_nodes, next_nodes))
+        for unvisited in unvisited_next:
+            please_visit.append((unvisited, node))
+            all_nodes.append(unvisited)
+    return (leaf_nodes, all_nodes)
+
+
 # MAIN SECTION
 
 
@@ -183,16 +219,28 @@ def generate_dungeon():
     '''
     Runs the entire algorithm to generate a dungeon
     '''
-    random.seed(2020)
+    random.seed(2020) # TODO remove this later
     config = DungeonConfig([('numeric cyclic', 3), ('binary reversible', 2)], 5, 4)
-    all_states = generate_all_states(config)
+
+    # Create a state node for every possible combination of dungeon state (based on config values)
     state_graph = Graph()
+    all_states = generate_all_states(config)
     for state in all_states:
         state_graph.add_node(state)
+
+    # Use state change types from config to populate some edges in the state traversal graph
     for i, state_change in enumerate(config.states):
         assign_state_change_edges(state_graph, state_change, i)
+
     # Traverse every state node from the start, make sure the only endpoints are the final state node
-    # Prune any nodes (and their edges) that are not navigable from the initial state node
+
+    # Prune any state nodes (and their edges) that are not navigable from the initial state node
+    _, all_nodes = take_all_walks(state_graph, '0A1A')
+    for node in state_graph.get_nodes():
+        if node not in all_nodes:
+            state_graph.remove_node(node)
+
+    # Print the state graph
     print('STATE GRAPH')
     state_graph.print()
 
