@@ -1,20 +1,26 @@
 '''
 This module implements the dungeon generation algorithm
 '''
-import re
 import sys
+import copy
 import random
-from typing import List, Tuple, Dict, Set, Optional
+from typing import List, Tuple, Dict, Set, Optional, TypeVar, Generic
 from dataclasses import dataclass
 from enum import Enum
 
+# Terms:
+# • State is some variable (binary or numerical) that affects your progression through the dungeon
+# • Total state is the sum of all states in the dungeon
+# • Value is one of several possibilities that a state can be in at a given time
+# • State type describes how a state can change with respect to the player's position in the dungeon
+#
 # Set up state graph:
 # • Read input config to get types of state change and final state(s)
 # • Calculate all possible states and create nodes for them
 # • Use the types of state change to add edges to the state nodes
 # • Make sure all state paths converge upon a final state
 # • Prune disconnected state nodes
-
+#
 # Generate dungeon layout:
 # • Create W x H rooms (nodes) and generate an enclave for each unique state change + 1
 #   (final room's enclave)
@@ -27,9 +33,38 @@ from enum import Enum
 # TYPES AND CONSTANTS SECTION
 
 
-class StateChangeType(Enum):
+class TotalState:
     '''
-    Defines the canonical state change types that this algorithm can process
+    Records values for each state
+    '''
+    _values: List[int]
+
+    def __init__(self, n: int):
+        self._values = [0 for _ in range(n)]
+
+    def set(self, index: int, value: int):
+        self._values[index] = value
+
+    def get(self, index: int) -> int:
+        return self._values[index]
+
+    def inc(self, index: int):
+        self._values[index] = self._values[index] + 1
+
+    def __str__(self):
+        content = ', '.join(list(map(str, self._values)))
+        return f'({content})'
+
+    def __eq__(self, x):
+        return str(self) == str(x)
+
+    def __hash__(self):
+        return hash(str(self))
+
+
+class StateType(Enum):
+    '''
+    Defines the canonical state types that this algorithm can process
     '''
     BINARY_REVERSIBLE = 'binary reversible'
     BINARY_IRREVERSIBLE = 'binary irreversible'
@@ -40,32 +75,37 @@ class StateChangeType(Enum):
 
 
 @dataclass
+class State:
+    '''
+    Represents dungeon state
+    '''
+    state_type: StateType
+    values: int
+    # NOTE values must be 2 if the state type is binary and within [3, 8] otherwise
+
+
+@dataclass
 class DungeonConfig:
     '''
     Represents some input config when generating a dungeon
     '''
-    # List of state change types. The int must be 2 for
-    # binary types and within [3, len(STATES)] for numeric
-    states: List[Tuple[StateChangeType, int]]
+    states: List[State]
     w: int # Width of the rooms rectangle
     h: int # Height of the rooms rectangle
 
 
-# Represents the values for a single state
-STATES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H']
-
-
-class Graph:
+G = TypeVar('G')
+class Graph(Generic[G]):
     '''
     Abstraction for a graph
     '''
-    _nodes: List[str] = []
-    _edges: Dict[str, Set[str]] = {}
+    _nodes: List[G] = []
+    _edges: Dict[G, Set[G]] = {}
 
-    def add_node(self, node: str) -> ():
+    def add_node(self, node: G) -> ():
         self._nodes.append(node)
 
-    def remove_node(self, node: str) -> ():
+    def remove_node(self, node: G) -> ():
         self._nodes.remove(node)
         if node in self._edges:
             del self._edges[node]
@@ -73,7 +113,7 @@ class Graph:
             if node in v:
                 v.remove(node)
 
-    def add_edge(self, n1: str, n2: str, bidirectional = False) -> ():
+    def add_edge(self, n1: G, n2: G, bidirectional = False) -> ():
         if n1 not in self._edges:
             self._edges[n1] = set()
         self._edges[n1].add(n2)
@@ -82,63 +122,48 @@ class Graph:
                 self._edges[n2] = set()
             self._edges[n2].add(n1)
 
-    def remove_edge(self, n1: str, n2: str, bidirectional = False) -> ():
+    def remove_edge(self, n1: G, n2: G, bidirectional = False) -> ():
         self._edges[n1].remove(n2)
         if bidirectional:
             self._edges[n2].remove(n1)
 
     def print(self) -> ():
         sys.stdout.write('Nodes: ')
-        sys.stdout.write(', '.join(self._nodes))
+        sys.stdout.write(', '.join(list(map(str, self._nodes))))
         sys.stdout.write('\nEdges:\n')
         for n1, n2s in self._edges.items():
             for n2 in n2s:
                 print(f'• {n1} -> {n2}')
 
-    def get_nodes_like(self, pattern: str) -> List[str]:
-        return list(filter(lambda x: re.match(pattern, x), self._nodes))
-
-    def get_next_nodes(self, node: str, disregard: Optional[str] = None) -> List[str]:
+    def get_next_nodes(self, node: G, disregard: Optional[G] = None) -> List[G]:
         if node not in self._edges:
             return []
         return list(filter(lambda x: x is not disregard, self._edges[node]))
 
-    def get_nodes(self) -> List[str]:
+    def get_nodes(self) -> List[G]:
         return self._nodes
 
 
 # GENERATE STATE GRAPH SECTION
 
 
-def generate_all_states(config: DungeonConfig) -> List[str]:
+def generate_all_total_states(config: DungeonConfig) -> List[TotalState]:
     '''
-    Generates all combinations of dungeon state by its config
+    Generates all possibilities for total state by the config
     '''
-    pieces = []
-    for a in range(len(config.states)):
-        pieces.append([(str(a) + STATES[x]) for x in range(config.states[a][1])])
-    return get_all_combinations(pieces)
-
-
-def get_all_combinations(list_of_lists: List[List[str]]) -> List[str]:
-    '''
-    Returns all combinations of the elements in a list of lists.
-    Helper method for generate_all_states()
-    '''
-    indices = [ 0 for x in range(len(list_of_lists)) ]
     results = []
+    total_state = TotalState(len(config.states))
     done = False
     while not done:
-        results.append(''.join(
-            list(map(lambda xy: list_of_lists[xy[0]][xy[1]], enumerate(indices)))
-        ))
+        results.append(total_state)
         a = 0
+        total_state = copy.deepcopy(total_state)
         while True:
-            indices[a] += 1
-            if indices[a] == len(list_of_lists[a]):
-                indices[a] = 0
+            total_state.inc(a)
+            if total_state.get(a) == config.states[a].values:
+                total_state.set(a, 0)
                 a += 1
-                if a == len(indices):
+                if a == len(config.states):
                     done = True
                     break
                 continue
@@ -146,21 +171,22 @@ def get_all_combinations(list_of_lists: List[List[str]]) -> List[str]:
     return results
 
 
-def get_nodes_with_state(state_graph: Graph, state: int, value: str) -> List[str]:
+def get_nodes_with_state_and_value(state_graph: Graph, state: int, value: int) -> List[TotalState]:
     '''
     Returns a list of state nodes with the given value for the given state
     '''
-    return state_graph.get_nodes_like(f'^([0-9]+[A-Z]+)*{state}{value}([0-9]+[A-Z]+)*$')
+    return list(filter(lambda x: x.get(state) == value, state_graph.get_nodes()))
 
-def modified_state_node(node: str, state: int, value: str) -> str:
+def modified_state_node(node: TotalState, state: int, value: int) -> TotalState:
     '''
     Returns a version of the node where the given state has some other value
     '''
-    before_after = re.match(f'(?:([0-9]+[A-Z]+)*){state}[A-Z]+(?:([0-9]+[A-Z]+)*)', node).groups()
-    return (before_after[0] if before_after[0] else '') + f'{state}{value}' + (before_after[1] if before_after[1] else '')
+    modified = copy.deepcopy(node)
+    modified.set(state, value)
+    return modified
 
 
-def random_subset(lst: List[str]) -> List[str]:
+def random_subset(lst: List) -> List:
     '''
     Returns a random subset (or at least size 1) of the input list
     '''
@@ -173,26 +199,27 @@ def random_subset(lst: List[str]) -> List[str]:
     return results
 
 
-def assign_state_change_edges(state_graph: Graph, state_change: Tuple[StateChangeType, int], state: int) -> ():
+def assign_state_change_edges(state_graph: Graph, state: Tuple[StateType, int], state_index: int) -> ():
     '''
     Populates edges on the state graph according to the configured state changes
     '''
-    if state_change[0] == StateChangeType.BINARY_REVERSIBLE.value:
-        nodes = random_subset(get_nodes_with_state(state_graph, state, 'A'))
+    if state.state_type == StateType.BINARY_REVERSIBLE.value:
+        nodes = random_subset(get_nodes_with_state_and_value(state_graph, state_index, 0))
         for node in nodes:
-            state_graph.add_edge(node, modified_state_node(node, state, 'B'), True)
+            state_graph.add_edge(node, modified_state_node(node, state_index, 1), True)
 
-    if state_change[0] == StateChangeType.NUMERIC_CYCLIC.value:
-        for value_index in range(state_change[1]):
-            nodes = random_subset(get_nodes_with_state(state_graph, state, STATES[value_index]))
-            next_value = STATES[0 if value_index + 1 == state_change[1] else value_index + 1]
-            prev_value = STATES[state_change[1] - 1 if value_index == 0 else value_index - 1]
+    if state.state_type == StateType.NUMERIC_CYCLIC.value:
+        for value in range(state.values):
+            nodes = random_subset(get_nodes_with_state_and_value(state_graph, state_index, value))
+            next_value = 0 if value + 1 == state.values else value + 1
+            prev_value = state.values - 1 if value == 0 else value - 1
             for node in nodes:
-                value = next_value if random.randint(0, 1) == 0 else prev_value
-                state_graph.add_edge(node, modified_state_node(node, state, value))
+                new_value = next_value if random.randint(0, 1) == 0 else prev_value
+                state_graph.add_edge(node, modified_state_node(node, state_index, new_value))
 
 
-def take_all_walks(state_graph: Graph, initial: str) -> Tuple[List[str], List[str]]:
+T = TypeVar('T')
+def take_all_walks(state_graph: Graph, initial: T) -> Tuple[List[T], List[T]]:
     '''
     Takes all paths through the graph and returns any dead-ends (leaf nodes) as well as all visited nodes
     '''
@@ -220,11 +247,11 @@ def generate_dungeon():
     Runs the entire algorithm to generate a dungeon
     '''
     random.seed(2020) # TODO remove this later
-    config = DungeonConfig([('numeric cyclic', 3), ('binary reversible', 2)], 5, 4)
+    config = DungeonConfig([State('numeric cyclic', 3), State('binary reversible', 2)], 5, 4)
 
     # Create a state node for every possible combination of dungeon state (based on config values)
     state_graph = Graph()
-    all_states = generate_all_states(config)
+    all_states = generate_all_total_states(config)
     for state in all_states:
         state_graph.add_node(state)
 
@@ -235,7 +262,7 @@ def generate_dungeon():
     # Traverse every state node from the start, make sure the only endpoints are the final state node
 
     # Prune any state nodes (and their edges) that are not navigable from the initial state node
-    _, all_nodes = take_all_walks(state_graph, '0A1A')
+    _, all_nodes = take_all_walks(state_graph, state_graph.get_nodes()[0])
     for node in state_graph.get_nodes():
         if node not in all_nodes:
             state_graph.remove_node(node)
