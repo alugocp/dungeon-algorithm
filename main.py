@@ -1,8 +1,10 @@
 '''
 This module implements the dungeon generation algorithm
 '''
+import re
 import sys
-from typing import List, Tuple, Dict
+import random
+from typing import List, Tuple, Dict, Set
 from dataclasses import dataclass
 from enum import Enum
 
@@ -43,7 +45,7 @@ class DungeonConfig:
     Represents some input config when generating a dungeon
     '''
     # List of state change types. The int must be 2 for
-    # binary types and cannot be greater than len(STATES)
+    # binary types and within [3, len(STATES)] for numeric
     states: List[Tuple[StateChangeType, int]]
     w: int # Width of the rooms rectangle
     h: int # Height of the rooms rectangle
@@ -58,7 +60,7 @@ class Graph:
     Abstraction for a graph
     '''
     _nodes: List[str] = []
-    _edges: Dict[str, List[str]] = {}
+    _edges: Dict[str, Set[str]] = {}
 
     def add_node(self, node: str) -> ():
         self._nodes.append(node)
@@ -68,12 +70,12 @@ class Graph:
 
     def add_edge(self, n1: str, n2: str, bidirectional = False) -> ():
         if n1 not in self._edges:
-            self._edges[n1] = []
-        self._edges[n1].append(n2)
+            self._edges[n1] = set()
+        self._edges[n1].add(n2)
         if bidirectional:
             if n2 not in self._edges:
-                self._edges[n2] = []
-            self._edges[n2].append(n1)
+                self._edges[n2] = set()
+            self._edges[n2].add(n1)
 
     def remove_edge(self, n1: str, n2: str, bidirectional = False) -> ():
         self._edges[n1].remove(n2)
@@ -84,9 +86,12 @@ class Graph:
         sys.stdout.write('Nodes: ')
         sys.stdout.write(', '.join(self._nodes))
         sys.stdout.write('\nEdges:\n')
-        for n1, n2s in self._edges:
+        for n1, n2s in self._edges.items():
             for n2 in n2s:
                 print(f'• {n1} -> {n2}')
+
+    def get_nodes(self, pattern: str) -> List[str]:
+        return list(filter(lambda x: re.match(pattern, x), self._nodes))
 
 
 # GENERATE STATE GRAPH SECTION
@@ -128,6 +133,49 @@ def get_all_combinations(list_of_lists: List[List[str]]) -> List[str]:
     return results
 
 
+def get_nodes_with_state(state_graph: Graph, state: int, value: str) -> List[str]:
+    return state_graph.get_nodes(f'^([0-9]+[A-Z]+)*{state}{value}([0-9]+[A-Z]+)*$')
+
+def modified_state_node(node: str, state: int, value: str) -> str:
+    '''
+    Returns a version of the node where the given state has some other value
+    '''
+    before_after = re.match(f'(?:([0-9]+[A-Z]+)*){state}[A-Z]+(?:([0-9]+[A-Z]+)*)', node).groups()
+    return (before_after[0] if before_after[0] else '') + f'{state}{value}' + (before_after[1] if before_after[1] else '')
+
+
+def random_subset(list: List[str]) -> List[str]:
+    '''
+    Returns a random subset (or at least size 1) of the input list
+    '''
+    results = []
+    for x in list:
+        if random.randint(0,1) == 0:
+            results.append(x)
+    if len(results) == 0:
+        results.append(list[random.randint(0, len(list) - 1)])
+    return results
+
+
+def assign_state_change_edges(state_graph: Graph, state_change: Tuple[StateChangeType, int], state: int) -> ():
+    '''
+    Populates edges on the state graph according to the configured state changes
+    '''
+    if state_change[0] == StateChangeType.BINARY_REVERSIBLE.value:
+        nodes = random_subset(get_nodes_with_state(state_graph, state, 'A'))
+        for node in nodes:
+            state_graph.add_edge(node, modified_state_node(node, state, 'B'), True)
+
+    if state_change[0] == StateChangeType.NUMERIC_CYCLIC.value:
+        for value_index in range(state_change[1]):
+            nodes = random_subset(get_nodes_with_state(state_graph, state, STATES[value_index]))
+            next_value = STATES[0 if value_index + 1 == state_change[1] else value_index + 1]
+            prev_value = STATES[state_change[1] - 1 if value_index == 0 else value_index - 1]
+            for node in nodes:
+                value = next_value if random.randint(0, 1) == 0 else prev_value
+                state_graph.add_edge(node, modified_state_node(node, state, value))
+
+
 # MAIN SECTION
 
 
@@ -135,11 +183,17 @@ def generate_dungeon():
     '''
     Runs the entire algorithm to generate a dungeon
     '''
+    random.seed(2020)
     config = DungeonConfig([('numeric cyclic', 3), ('binary reversible', 2)], 5, 4)
     all_states = generate_all_states(config)
     state_graph = Graph()
     for state in all_states:
         state_graph.add_node(state)
+    for i, state_change in enumerate(config.states):
+        assign_state_change_edges(state_graph, state_change, i)
+    # Traverse every state node from the start, make sure the only endpoints are the final state node
+    # Prune any nodes (and their edges) that are not navigable from the initial state node
+    print('STATE GRAPH')
     state_graph.print()
 
 
