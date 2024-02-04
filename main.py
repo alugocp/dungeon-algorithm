@@ -2,6 +2,7 @@
 This module implements the dungeon generation algorithm
 '''
 import sys
+import math
 import copy
 import random
 from typing import List, Tuple, Dict, Set, TypeVar, Generic
@@ -98,8 +99,12 @@ class Graph(Generic[G]):
     '''
     Abstraction for a graph
     '''
-    _nodes: List[G] = []
-    _edges: Dict[G, Set[G]] = {}
+    _nodes: List[G]
+    _edges: Dict[G, Set[G]]
+
+    def __init__(self):
+        self._nodes = []
+        self._edges = {}
 
     def add_node(self, node: G) -> ():
         self._nodes.append(node)
@@ -249,6 +254,72 @@ def take_all_walks(state_graph: Graph, initial: T) -> Tuple[List[T], List[T]]:
     return (leaf_nodes, all_nodes)
 
 
+# GENERATE DUNGEON GRAPH SECTION
+
+
+def get_room_node_names(w: int, h: int) -> List[int]:
+    return list(range(w * h))
+
+
+def get_adjacent_rooms(room: int, w: int, h: int) -> List[int]:
+    neighbors = []
+    x = room % w
+    y = math.floor(room / w)
+    if x > 0:
+        neighbors.append(room - 1)
+    if x < w - 1:
+        neighbors.append(room + 1)
+    if y > 0:
+        neighbors.append(room - w)
+    if y < h - 1:
+        neighbors.append(room + w)
+    return neighbors
+
+
+def make_enclaves(room_graph: Graph, n: int, w: int, h: int) -> ():
+    all_nodes = copy.deepcopy(room_graph.get_nodes())
+    process_next = []
+    visited = []
+    def unvisited_and_unqueued(x):
+        return x not in visited and x not in process_next
+
+    # Grab n random nodes to seed the enclaves
+    for _ in range(n):
+        node = all_nodes.pop(random.randint(0, len(all_nodes) - 1))
+        visited.append(node)
+
+    # Add each enclave seed's unvisited and unqueued neighbors to the queue
+    for node in visited:
+        next_in_queue = list(filter(
+            unvisited_and_unqueued,
+            get_adjacent_rooms(node, w, h)
+        ))
+        process_next += next_in_queue
+
+    # Process the queue to put every node in an enclave
+    while len(process_next) > 0:
+        node = process_next.pop(0)
+
+        # Add a bidirectional edge from this node to one of its visited neighbors
+        options = list(filter(
+            lambda x: x in visited,
+            get_adjacent_rooms(node, w, h)
+        ))
+        if len(options) > 0:
+            node1 = options[random.randint(0, len(options) - 1)]
+            room_graph.add_edge(node, node1, True)
+
+        # Add the node to the visited set
+        visited.append(node)
+
+        # Add its unvisited and unqueued neighbors to the queue
+        next_in_queue = list(filter(
+            unvisited_and_unqueued,
+            get_adjacent_rooms(node, w, h)
+        ))
+        process_next += next_in_queue
+
+
 # MAIN SECTION
 
 
@@ -292,6 +363,19 @@ def generate_dungeon():
     # Print the state graph
     print('STATE GRAPH')
     state_graph.print()
+    print('')
+
+    # Create a room graph with all the room names as nodes
+    room_graph = Graph()
+    for room in get_room_node_names(config.w, config.h):
+        room_graph.add_node(room)
+
+    # Generate enclaves in the room graph
+    make_enclaves(room_graph, 4, config.w, config.h)
+
+    # Print the room graph
+    print('ROOM GRAPH')
+    room_graph.print()
 
 
 if __name__ == '__main__':
