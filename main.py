@@ -4,7 +4,7 @@ This module implements the dungeon generation algorithm
 import sys
 import copy
 import random
-from typing import List, Tuple, Dict, Set, Optional, TypeVar, Generic
+from typing import List, Tuple, Dict, Set, TypeVar, Generic
 from dataclasses import dataclass
 from enum import Enum
 
@@ -52,8 +52,7 @@ class TotalState:
         self._values[index] = self._values[index] + 1
 
     def __str__(self):
-        content = ', '.join(list(map(str, self._values)))
-        return f'({content})'
+        return ''.join(list(map(str, self._values)))
 
     def __eq__(self, x):
         return str(self) == str(x)
@@ -127,18 +126,29 @@ class Graph(Generic[G]):
         if bidirectional:
             self._edges[n2].remove(n1)
 
+    def is_bidirectional(self, n1: G, n2: G) -> bool:
+        return n1 in self._edges and n2 in self._edges and n2 in self._edges[n1] and n1 in self._edges[n2]
+
     def print(self) -> ():
         sys.stdout.write('Nodes: ')
         sys.stdout.write(', '.join(list(map(str, self._nodes))))
         sys.stdout.write('\nEdges:\n')
+        edge_logs = []
         for n1, n2s in self._edges.items():
             for n2 in n2s:
-                print(f'• {n1} -> {n2}')
+                opposite = f'• {n2} -- {n1}'
+                if not self.is_bidirectional(n1, n2):
+                    edge_logs.append(f'• {n1} -> {n2}')
+                elif opposite not in edge_logs:
+                    edge_logs.append(f'• {n1} -- {n2}')
+        edge_logs.sort()
+        for edge in edge_logs:
+            print(edge)
 
-    def get_next_nodes(self, node: G, disregard: Optional[G] = None) -> List[G]:
+    def get_next_nodes(self, node: G) -> List[G]:
         if node not in self._edges:
             return []
-        return list(filter(lambda x: x is not disregard, self._edges[node]))
+        return list(self._edges[node])
 
     def get_nodes(self) -> List[G]:
         return self._nodes
@@ -224,12 +234,12 @@ def take_all_walks(state_graph: Graph, initial: T) -> Tuple[List[T], List[T]]:
     Takes all paths through the graph and returns any dead-ends (leaf nodes) as well as all visited nodes
     '''
     leaf_nodes = []
-    all_nodes = []
+    all_nodes = [initial]
     please_visit = [(initial, None)]
     while len(please_visit) > 0:
         node, prev = please_visit.pop(0)
-        next_nodes = state_graph.get_next_nodes(node, prev)
-        if len(next_nodes) == 0:
+        next_nodes = state_graph.get_next_nodes(node)
+        if len(next_nodes) == 0 or (len(next_nodes) == 1 and prev in next_nodes):
             leaf_nodes.append(node)
             continue
         unvisited_next = list(filter(lambda x: x not in all_nodes, next_nodes))
@@ -259,13 +269,25 @@ def generate_dungeon():
     for i, state_change in enumerate(config.states):
         assign_state_change_edges(state_graph, state_change, i)
 
-    # Traverse every state node from the start, make sure the only endpoints are the final state node
+    # Get the initial and final state nodes
+    initial_node = state_graph.get_nodes()[0]
+    final_nodes = list(filter(lambda x: str(x) in ['21'], state_graph.get_nodes()))
 
     # Prune any state nodes (and their edges) that are not navigable from the initial state node
-    _, all_nodes = take_all_walks(state_graph, state_graph.get_nodes()[0])
+    leaf_nodes, all_nodes = take_all_walks(state_graph, initial_node)
     for node in state_graph.get_nodes():
         if node not in all_nodes:
             state_graph.remove_node(node)
+
+    # Prune any leaf nodes that aren't part the final total state
+    nodes_to_prune = list(filter(lambda x: x not in final_nodes, leaf_nodes))
+    while len(nodes_to_prune) > 0:
+        for node in nodes_to_prune:
+            state_graph.remove_node(node)
+        leaf_nodes, _ = take_all_walks(state_graph, initial_node)
+        nodes_to_prune = list(filter(lambda x: x not in final_nodes, leaf_nodes))
+
+    # TODO double check that the initial node has a path to some final node and fix that if it doesn't
 
     # Print the state graph
     print('STATE GRAPH')
