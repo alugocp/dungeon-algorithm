@@ -62,6 +62,26 @@ class TotalState:
         return hash(str(self))
 
 
+@dataclass
+class TotalStateDelta():
+    '''
+    Recdords the difference between two total states
+    '''
+    state_index: int # Index of the changed state
+    value1: int # The value before the change
+    value2: int # the value after the change
+    omnidirectional: bool
+
+    def __str__(self):
+        return f'{self.state_index}:*' if self.omnidirectional else f'{self.state_index}:{self.value1}->{self.value2}'
+
+    def __eq__(self, x):
+        return str(self) == str(x)
+
+    def __hash__(self):
+        return hash(str(self))
+
+
 class StateType(Enum):
     '''
     Defines the canonical state types that this algorithm can process
@@ -158,6 +178,13 @@ class Graph(Generic[G]):
     def get_nodes(self) -> List[G]:
         return self._nodes
 
+    def get_edges(self) -> List[Tuple[G, G]]:
+        edges = []
+        for n1, n2s in self._edges.items():
+            for n2 in n2s:
+                edges.append((n1, n2))
+        return edges
+
 
 # GENERATE STATE GRAPH SECTION
 
@@ -252,6 +279,30 @@ def take_all_walks(state_graph: Graph, initial: T) -> Tuple[List[T], List[T]]:
             please_visit.append((unvisited, node))
             all_nodes.append(unvisited)
     return (leaf_nodes, all_nodes)
+
+def get_total_state_delta(config: DungeonConfig, t1: TotalState, t2: TotalState) -> TotalStateDelta:
+    '''
+    Returns a total state delta object derived from the difference between two total states
+    '''
+    diff = -1
+    for a in range(len(config.states)):
+        if t1.get(a) != t2.get(a):
+            if diff > -1:
+                raise RuntimeError('Total states have more than one difference')
+            diff = a
+    if diff == -1:
+        raise RuntimeError('Total states are the exact same')
+    omnidirectional = config.states[diff].state_type in [
+        StateType.BINARY_REVERSIBLE.value,
+        StateType.NUMERIC_OPTIONAL.value
+    ]
+    return TotalStateDelta(diff, t1.get(diff), t2.get(diff), omnidirectional)
+
+def get_all_total_state_deltas(state_graph: Graph, config: DungeonConfig) -> List[TotalStateDelta]:
+    deltas = set()
+    for n1, n2 in state_graph.get_edges():
+        deltas.add(get_total_state_delta(config, n1, n2))
+    return list(deltas)
 
 
 # GENERATE DUNGEON GRAPH SECTION
@@ -360,6 +411,8 @@ def generate_dungeon():
 
     # TODO double check that the initial node has a path to some final node and fix that if it doesn't
 
+    total_state_deltas = get_all_total_state_deltas(state_graph, config)
+
     # Print the state graph
     print('STATE GRAPH')
     state_graph.print()
@@ -371,7 +424,7 @@ def generate_dungeon():
         room_graph.add_node(room)
 
     # Generate enclaves in the room graph
-    make_enclaves(room_graph, 4, config.w, config.h)
+    make_enclaves(room_graph, len(total_state_deltas), config.w, config.h)
 
     # Print the room graph
     print('ROOM GRAPH')
