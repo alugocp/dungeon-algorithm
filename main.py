@@ -73,7 +73,9 @@ class TotalStateDelta():
     omnidirectional: bool
 
     def __str__(self):
-        return f'{self.state_index}:*' if self.omnidirectional else f'{self.state_index}:{self.value1}->{self.value2}'
+        return f'{self.state_index}:*' \
+            if self.omnidirectional \
+            else f'{self.state_index}:{self.value1}->{self.value2}'
 
     def __eq__(self, x):
         return str(self) == str(x)
@@ -152,7 +154,8 @@ class Graph(Generic[G]):
             self._edges[n2].remove(n1)
 
     def is_bidirectional(self, n1: G, n2: G) -> bool:
-        return n1 in self._edges and n2 in self._edges and n2 in self._edges[n1] and n1 in self._edges[n2]
+        return n1 in self._edges and n2 in self._edges and \
+            n2 in self._edges[n1] and n1 in self._edges[n2]
 
     def print(self) -> ():
         sys.stdout.write('Nodes: ')
@@ -241,7 +244,11 @@ def random_subset(lst: List) -> List:
     return results
 
 
-def assign_state_change_edges(state_graph: Graph, state: Tuple[StateType, int], state_index: int) -> ():
+def assign_state_change_edges(
+    state_graph: Graph,
+    state: Tuple[StateType, int],
+    state_index: int
+) -> ():
     '''
     Populates edges on the state graph according to the configured state changes
     '''
@@ -263,7 +270,8 @@ def assign_state_change_edges(state_graph: Graph, state: Tuple[StateType, int], 
 T = TypeVar('T')
 def take_all_walks(state_graph: Graph, initial: T) -> Tuple[List[T], List[T]]:
     '''
-    Takes all paths through the graph and returns any dead-ends (leaf nodes) as well as all visited nodes
+    Takes all paths through the graph and returns any
+    dead-ends (leaf nodes) as well as all visited nodes
     '''
     leaf_nodes = []
     all_nodes = [initial]
@@ -299,6 +307,9 @@ def get_total_state_delta(config: DungeonConfig, t1: TotalState, t2: TotalState)
     return TotalStateDelta(diff, t1.get(diff), t2.get(diff), omnidirectional)
 
 def get_all_total_state_deltas(state_graph: Graph, config: DungeonConfig) -> List[TotalStateDelta]:
+    '''
+    Returns a list of all unique total state deltas present in the state graph
+    '''
     deltas = set()
     for n1, n2 in state_graph.get_edges():
         deltas.add(get_total_state_delta(config, n1, n2))
@@ -309,10 +320,16 @@ def get_all_total_state_deltas(state_graph: Graph, config: DungeonConfig) -> Lis
 
 
 def get_room_node_names(w: int, h: int) -> List[int]:
+    '''
+    Generates a list of names for w * h room graph nodes
+    '''
     return list(range(w * h))
 
 
 def get_adjacent_rooms(room: int, w: int, h: int) -> List[int]:
+    '''
+    Returns the adjacent nodes of some room in the room graph
+    '''
     neighbors = []
     x = room % w
     y = math.floor(room / w)
@@ -328,6 +345,10 @@ def get_adjacent_rooms(room: int, w: int, h: int) -> List[int]:
 
 
 def make_enclaves(room_graph: Graph, n: int, w: int, h: int) -> ():
+    '''
+    Assigns edges such that the room graph contains n non-cyclic
+    paths that cover the entire graph but do not intersect
+    '''
     all_nodes = copy.deepcopy(room_graph.get_nodes())
     process_next = []
     visited = []
@@ -409,7 +430,8 @@ def generate_dungeon():
         leaf_nodes, _ = take_all_walks(state_graph, initial_node)
         nodes_to_prune = list(filter(lambda x: x not in final_nodes, leaf_nodes))
 
-    # TODO double check that the initial node has a path to some final node and fix that if it doesn't
+    # TODO double check that the initial node has a path to some final
+    #      node and fix that if it doesn't
 
     total_state_deltas = get_all_total_state_deltas(state_graph, config)
 
@@ -423,8 +445,9 @@ def generate_dungeon():
     for room in get_room_node_names(config.w, config.h):
         room_graph.add_node(room)
 
-    # Generate enclaves in the room graph
-    make_enclaves(room_graph, len(total_state_deltas), config.w, config.h)
+    # Generate enclaves in the room graph (1 for each unqie total state delta
+    # plus the final enclave)
+    make_enclaves(room_graph, len(total_state_deltas) + 1, config.w, config.h)
 
     # Print the room graph
     print('ROOM GRAPH')
