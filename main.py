@@ -5,7 +5,7 @@ import sys
 import math
 import copy
 import random
-from typing import List, Tuple, Dict, Set, TypeVar, Generic
+from typing import List, Tuple, Dict, Set, TypeVar, Generic, Self
 from dataclasses import dataclass
 from enum import Enum
 
@@ -43,6 +43,11 @@ class TotalState:
     def __init__(self, n: int):
         self._values = [0 for _ in range(n)]
 
+    def from_list(ls: List[int]) -> Self:
+        ts = TotalState(len(ls))
+        ts._values = ls
+        return ts
+
     def set(self, index: int, value: int):
         self._values[index] = value
 
@@ -65,7 +70,7 @@ class TotalState:
 @dataclass
 class TotalStateDelta():
     '''
-    Recdords the difference between two total states
+    Records the difference between two total states
     '''
     state_index: int # Index of the changed state
     value1: int # The value before the change
@@ -107,7 +112,7 @@ class StateType(Enum):
     BINARY_REVERSIBLE = 'binary reversible'
     BINARY_IRREVERSIBLE = 'binary irreversible'
     BINARY_CYCLIC = 'binary cyclic'
-    NUMERIC_OPTIONAL = 'numeric optional'
+    NUMERIC_REVERSIBLE = 'numeric reversible'
     NUMERIC_IRREVERSIBLE = 'numeric irreversible'
     NUMERIC_CYCLIC = 'numeric cyclic'
 
@@ -130,6 +135,7 @@ class DungeonConfig:
     states: List[State]
     w: int # Width of the rooms rectangle
     h: int # Height of the rooms rectangle
+    final_total_states: List[TotalState]
 
 
 G = TypeVar('G')
@@ -268,11 +274,37 @@ def assign_state_change_edges(
     '''
     Populates edges on the state graph according to the configured state changes
     '''
+    # Binary state that can the player can switch back and forth at will
     if state.state_type == StateType.BINARY_REVERSIBLE.value:
         nodes = random_subset(get_nodes_with_state_and_value(state_graph, state_index, 0))
         for node in nodes:
             state_graph.add_edge(node, modified_state_node(node, state_index, 1), True)
 
+    # Binary state that the player can only change in one direction at a time
+    if state.state_type == StateType.BINARY_CYCLIC.value:
+        nodes = random_subset(get_nodes_with_state_and_value(state_graph, state_index, 0))
+        for node in nodes:
+            state_graph.add_edge(node, modified_state_node(node, state_index, 1))
+
+        nodes = random_subset(get_nodes_with_state_and_value(state_graph, state_index, 1))
+        for node in nodes:
+            state_graph.add_edge(node, modified_state_node(node, state_index, 0))
+
+    # Binary state with no way to change back
+    if state.state_type == StateType.BINARY_IRREVERSIBLE.value:
+        nodes = random_subset(get_nodes_with_state_and_value(state_graph, state_index, 0))
+        for node in nodes:
+            state_graph.add_edge(node, modified_state_node(node, state_index, 1))
+
+    # Nonbinary state that can the player can alter at will
+    if state.state_type == StateType.NUMERIC_REVERSIBLE.value:
+        nodes = random_subset(get_nodes_with_state_and_value(state_graph, state_index, 0))
+        for node in nodes:
+            for value in range(state.values - 1):
+                for value1 in range(value + 1, state.values):
+                    state_graph.add_edge(modified_state_node(node, state_index, value), modified_state_node(node, state_index, value1), True)
+
+    # Nonbinary state that the player can only change in one direction at a time
     if state.state_type == StateType.NUMERIC_CYCLIC.value:
         for value in range(state.values):
             nodes = random_subset(get_nodes_with_state_and_value(state_graph, state_index, value))
@@ -281,6 +313,13 @@ def assign_state_change_edges(
             for node in nodes:
                 new_value = next_value if random.randint(0, 1) == 0 else prev_value
                 state_graph.add_edge(node, modified_state_node(node, state_index, new_value))
+
+    # Nonbinary state with no way to change back
+    if state.state_type == StateType.NUMERIC_IRREVERSIBLE.value:
+        nodes = random_subset(get_nodes_with_state_and_value(state_graph, state_index, 0))
+        for node in nodes:
+            for value in range(1, state.values):
+                state_graph.add_edge(node, modified_state_node(node, state_index, value))
 
 
 T = TypeVar('T')
@@ -318,7 +357,7 @@ def get_total_state_delta(config: DungeonConfig, t1: TotalState, t2: TotalState)
         raise RuntimeError('Total states are the exact same')
     omnidirectional = config.states[diff].state_type in [
         StateType.BINARY_REVERSIBLE.value,
-        StateType.NUMERIC_OPTIONAL.value
+        StateType.NUMERIC_REVERSIBLE.value
     ]
     return TotalStateDelta(diff, t1.get(diff), t2.get(diff), omnidirectional)
 
@@ -418,7 +457,7 @@ def make_enclaves(room_graph: Graph, n: int, w: int, h: int) -> List[Enclave]:
 # TODO does this algorithm work if there are multiple edges coming from a state node?
 #      Review with more complicated state graphs, and perhaps rework state graph generation
 #      to only generate a single non-branching path.
-def get_deltas_required_by_total_state(config: DungeonConfig, state_graph: Graph, final_nodes: List[int]) -> ():
+def walk_state_graph_and_connect_enclaves(config: DungeonConfig, state_graph: Graph) -> ():
     '''
     Traverses through the state graph and returns all the total state
     deltas that must be accessible at each total state node
@@ -429,7 +468,7 @@ def get_deltas_required_by_total_state(config: DungeonConfig, state_graph: Graph
     while len(queued) > 0:
         prev, node = queued.pop(0)
         visited.append((prev, node))
-        if node in final_nodes:
+        if node in config.final_total_states:
             prev_delta = get_total_state_delta(config, prev, node)
             print(f'• Enclave {prev_delta} -- final enclave when {node}')
 
@@ -470,7 +509,9 @@ def generate_dungeon():
     Runs the entire algorithm to generate a dungeon
     '''
     random.seed(2020) # TODO remove this later
-    config = DungeonConfig([State('numeric cyclic', 3), State('binary reversible', 2)], 5, 4)
+    config = DungeonConfig([State('numeric cyclic', 3), State('binary reversible', 2)], 5, 4, [TotalState.from_list([2, 1])])
+
+    # TODO read and validate dungeon config from a JSON file
 
     # Create a state node for every possible combination of dungeon state (based on config values)
     state_graph = Graph()
@@ -484,7 +525,6 @@ def generate_dungeon():
 
     # Get the initial and final state nodes
     initial_node = state_graph.get_nodes()[0]
-    final_nodes = list(filter(lambda x: str(x) in ['21'], state_graph.get_nodes()))
 
     # Prune any state nodes (and their edges) that are not navigable from the initial state node
     leaf_nodes, all_nodes = take_all_walks(state_graph, initial_node)
@@ -493,12 +533,12 @@ def generate_dungeon():
             state_graph.remove_node(node)
 
     # Prune any leaf nodes that aren't part the final total state
-    nodes_to_prune = list(filter(lambda x: x not in final_nodes, leaf_nodes))
+    nodes_to_prune = list(filter(lambda x: x not in config.final_total_states, leaf_nodes))
     while len(nodes_to_prune) > 0:
         for node in nodes_to_prune:
             state_graph.remove_node(node)
         leaf_nodes, _ = take_all_walks(state_graph, initial_node)
-        nodes_to_prune = list(filter(lambda x: x not in final_nodes, leaf_nodes))
+        nodes_to_prune = list(filter(lambda x: x not in config.final_total_states, leaf_nodes))
 
     # TODO double check that the initial node has a path to some final
     #      node and fix that if it doesn't
@@ -532,7 +572,7 @@ def generate_dungeon():
     print('')
 
     print('Enclave traversal:')
-    get_deltas_required_by_total_state(config, state_graph, final_nodes)
+    walk_state_graph_and_connect_enclaves(config, state_graph)
 
 
 if __name__ == '__main__':
