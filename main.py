@@ -414,6 +414,37 @@ def make_enclaves(room_graph: Graph, n: int, w: int, h: int) -> List[Enclave]:
     enclaves.sort(key = lambda e: len(e.nodes), reverse = True)
     return enclaves
 
+def get_deltas_required_by_total_state(config: DungeonConfig, state_graph: Graph, final_nodes: List[int]) -> ():
+    '''
+    Traverses through the state graph and returns all the total state
+    deltas that must be accessible at each total state node
+    '''
+    visited = []
+    queued = [ (None, state_graph.get_nodes()[0]) ]
+    while len(queued) > 0:
+        prev, node = queued.pop(0)
+        visited.append((prev, node))
+        if node in final_nodes:
+            prev_delta = get_total_state_delta(config, prev, node)
+            print(f'• Enclave {prev_delta} -- final enclave when {node}')
+        for node1 in state_graph.get_next_nodes(node):
+            # Retrieve the total state delta (enclave) between
+            # the current total state and the next total state
+            delta = get_total_state_delta(config, node, node1)
+            if prev is not None:
+                # Retrieve the previous state delta (state graph edge /
+                # total state delta / enclave that came before the currently
+                # considered one) so we can establish a conditional path
+                # between two enclaves dependent on the total state they share.
+                prev_delta = get_total_state_delta(config, prev, node)
+                if delta != prev_delta:
+                    print(f'• Enclave {prev_delta} -- enclave {delta} when {node}')
+
+            # Next we should check the edge from node -> node1
+            please_queue = (node, node1)
+            if please_queue not in visited and please_queue not in queued:
+                queued.append((node, node1))
+
 
 # MAIN SECTION
 
@@ -468,14 +499,19 @@ def generate_dungeon():
     for room in get_room_node_names(config.w, config.h):
         room_graph.add_node(room)
 
-    # Generate enclaves in the room graph (1 for each unqie total state delta
-    # plus the final enclave)
+    # Generate enclaves in the room graph (1 for each unique total state delta
+    # plus the final enclave) and assign total state deltas to them
     enclaves = make_enclaves(room_graph, len(total_state_deltas) + 1, config.w, config.h)
-    print(list(map(str, enclaves)))
+    for a, delta in enumerate(total_state_deltas):
+        enclaves[a].delta = delta
 
     # Print the room graph
     print('ROOM GRAPH')
     room_graph.print()
+
+    # TODO print for debugging
+    print(list(map(str, enclaves)))
+    get_deltas_required_by_total_state(config, state_graph, final_nodes)
 
 
 if __name__ == '__main__':
