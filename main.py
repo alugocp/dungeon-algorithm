@@ -83,6 +83,21 @@ class TotalStateDelta():
     def __hash__(self):
         return hash(str(self))
 
+class Enclave:
+    '''
+    Represents an enclave in the dungeon
+    '''
+    delta: TotalStateDelta
+    nodes: List[int]
+
+    def __init__(self, node: int):
+        self.delta = None
+        self.nodes = [node]
+
+    def __str__(self):
+        nodes = ', '.join(list(map(str, self.nodes)))
+        return f'{self.delta} ({nodes})'
+
 
 class StateType(Enum):
     '''
@@ -344,11 +359,12 @@ def get_adjacent_rooms(room: int, w: int, h: int) -> List[int]:
     return neighbors
 
 
-def make_enclaves(room_graph: Graph, n: int, w: int, h: int) -> ():
+def make_enclaves(room_graph: Graph, n: int, w: int, h: int) -> List[Enclave]:
     '''
     Assigns edges such that the room graph contains n non-cyclic
     paths that cover the entire graph but do not intersect
     '''
+    enclaves = []
     all_nodes = copy.deepcopy(room_graph.get_nodes())
     process_next = []
     visited = []
@@ -358,6 +374,7 @@ def make_enclaves(room_graph: Graph, n: int, w: int, h: int) -> ():
     # Grab n random nodes to seed the enclaves
     for _ in range(n):
         node = all_nodes.pop(random.randint(0, len(all_nodes) - 1))
+        enclaves.append(Enclave(node))
         visited.append(node)
 
     # Add each enclave seed's unvisited and unqueued neighbors to the queue
@@ -381,6 +398,10 @@ def make_enclaves(room_graph: Graph, n: int, w: int, h: int) -> ():
             node1 = options[random.randint(0, len(options) - 1)]
             room_graph.add_edge(node, node1, True)
 
+            # Find the enclave this neighbor belongs to and add the node to it
+            enclave = list(filter(lambda x: node1 in x.nodes, enclaves))[0]
+            enclave.nodes.append(node)
+
         # Add the node to the visited set
         visited.append(node)
 
@@ -390,6 +411,8 @@ def make_enclaves(room_graph: Graph, n: int, w: int, h: int) -> ():
             get_adjacent_rooms(node, w, h)
         ))
         process_next += next_in_queue
+    enclaves.sort(key = lambda e: len(e.nodes), reverse = True)
+    return enclaves
 
 
 # MAIN SECTION
@@ -447,7 +470,8 @@ def generate_dungeon():
 
     # Generate enclaves in the room graph (1 for each unqie total state delta
     # plus the final enclave)
-    make_enclaves(room_graph, len(total_state_deltas) + 1, config.w, config.h)
+    enclaves = make_enclaves(room_graph, len(total_state_deltas) + 1, config.w, config.h)
+    print(list(map(str, enclaves)))
 
     # Print the room graph
     print('ROOM GRAPH')
