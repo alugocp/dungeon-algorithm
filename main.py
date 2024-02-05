@@ -96,7 +96,8 @@ class Enclave:
 
     def __str__(self):
         nodes = ', '.join(list(map(str, self.nodes)))
-        return f'{self.delta} ({nodes})'
+        label = self.delta or 'Final'
+        return f'{label} ({nodes})'
 
 
 class StateType(Enum):
@@ -414,7 +415,7 @@ def make_enclaves(room_graph: Graph, n: int, w: int, h: int) -> List[Enclave]:
     enclaves.sort(key = lambda e: len(e.nodes), reverse = True)
     return enclaves
 
-# TODO does this algortithm work if there are multiple edges coming from a state node?
+# TODO does this algorithm work if there are multiple edges coming from a state node?
 #      Review with more complicated state graphs, and perhaps rework state graph generation
 #      to only generate a single non-branching path.
 def get_deltas_required_by_total_state(config: DungeonConfig, state_graph: Graph, final_nodes: List[int]) -> ():
@@ -431,16 +432,22 @@ def get_deltas_required_by_total_state(config: DungeonConfig, state_graph: Graph
         if node in final_nodes:
             prev_delta = get_total_state_delta(config, prev, node)
             print(f'• Enclave {prev_delta} -- final enclave when {node}')
+
         for node1 in state_graph.get_next_nodes(node):
             # Retrieve the total state delta (enclave) between
             # the current total state and the next total state
             delta = get_total_state_delta(config, node, node1)
-            # TODO we may need to create a set of first enclaves
-            #      for each edge from the initial state node
-            if first_enclave is None:
-                first_enclave = delta
-                print(f'• First enclave is {delta}')
-            if prev is not None:
+
+            # If we're coming from the first state node (prev is None) then every
+            # edge (enclave) here should be navigable from the first enclave and
+            # one of them should actually be the first enclave.
+            if prev is None:
+                if first_enclave is None:
+                    first_enclave = delta
+                    print(f'• First enclave is {delta}')
+                else:
+                    print(f'• Enclave {first_enclave} -- enclave {delta} when {node}')
+            else:
                 # Retrieve the previous state delta (state graph edge /
                 # total state delta / enclave that came before the currently
                 # considered one) so we can establish a conditional path
@@ -512,17 +519,19 @@ def generate_dungeon():
     # plus the final enclave) and assign total state deltas to them
     enclaves = make_enclaves(room_graph, len(total_state_deltas) + 1, config.w, config.h)
     for a, delta in enumerate(total_state_deltas):
-        # TODO deltas are assigned to enclaves basically at random. This is fine
-        #      except for the first state delta/enclave, which must be determined
-        #      by the result of get_deltas_required_by_total_state()
         enclaves[a].delta = delta
 
     # Print the room graph
     print('ROOM GRAPH')
     room_graph.print()
+    print('')
 
-    # TODO print for debugging
-    print(list(map(str, enclaves)))
+    print('Enclaves:')
+    for enclave in enclaves:
+        print(f'• {enclave}')
+    print('')
+
+    print('Enclave traversal:')
     get_deltas_required_by_total_state(config, state_graph, final_nodes)
 
 
