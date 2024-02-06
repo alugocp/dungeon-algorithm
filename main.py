@@ -5,7 +5,7 @@ import sys
 import math
 import copy
 import random
-from typing import List, Tuple, Dict, Set, TypeVar, Generic, Self
+from typing import List, Tuple, Dict, Set, TypeVar, Generic
 from dataclasses import dataclass
 from enum import Enum
 
@@ -43,9 +43,11 @@ class TotalState:
     def __init__(self, n: int):
         self._values = [0 for _ in range(n)]
 
-    def from_list(ls: List[int]) -> Self:
+    @staticmethod
+    def from_list(ls: List[int]):
         ts = TotalState(len(ls))
-        ts._values = ls
+        for i, val in enumerate(ls):
+            ts.set(i, val)
         return ts
 
     def set(self, index: int, value: int):
@@ -132,9 +134,9 @@ class DungeonConfig:
     '''
     Represents some input config when generating a dungeon
     '''
-    states: List[State]
     w: int # Width of the rooms rectangle
     h: int # Height of the rooms rectangle
+    states: List[State]
     final_total_states: List[TotalState]
 
 
@@ -302,7 +304,11 @@ def assign_state_change_edges(
         for node in nodes:
             for value in range(state.values - 1):
                 for value1 in range(value + 1, state.values):
-                    state_graph.add_edge(modified_state_node(node, state_index, value), modified_state_node(node, state_index, value1), True)
+                    state_graph.add_edge(
+                        modified_state_node(node, state_index, value),
+                        modified_state_node(node, state_index, value1),
+                        True
+                    )
 
     # Nonbinary state that the player can only change in one direction at a time
     if state.state_type == StateType.NUMERIC_CYCLIC.value:
@@ -509,7 +515,11 @@ def generate_dungeon():
     Runs the entire algorithm to generate a dungeon
     '''
     random.seed(2020) # TODO remove this later
-    config = DungeonConfig([State('numeric cyclic', 3), State('binary reversible', 2)], 5, 4, [TotalState.from_list([2, 1])])
+    config = DungeonConfig(
+        5, 4,
+        [State('numeric cyclic', 3), State('binary reversible', 2)],
+        [TotalState.from_list([2, 1])]
+    )
 
     # TODO read and validate dungeon config from a JSON file
 
