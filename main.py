@@ -30,9 +30,7 @@ from enum import Enum
 #   represented by the connected state node's edges with a conditional passage
 # • Throw in some one-way doors to "earlier" enclaves (based on state graph path traversal order)
 
-
 # TYPES AND CONSTANTS SECTION
-
 
 class TotalState:
     '''
@@ -80,7 +78,6 @@ class TotalState:
     def __hash__(self):
         return hash(str(self))
 
-
 @dataclass
 class TotalStateDelta():
     '''
@@ -118,7 +115,6 @@ class Enclave:
         label = self.delta or 'Final'
         return f'{label} ({nodes})'
 
-
 class StateType(Enum):
     '''
     Defines the canonical state types that this algorithm can process
@@ -127,9 +123,7 @@ class StateType(Enum):
     BINARY_IRREVERSIBLE = 'binary irreversible'
     BINARY_CYCLIC = 'binary cyclic'
     NUMERIC_REVERSIBLE = 'numeric reversible'
-    NUMERIC_IRREVERSIBLE = 'numeric irreversible'
     NUMERIC_CYCLIC = 'numeric cyclic'
-
 
 @dataclass
 class State:
@@ -138,8 +132,7 @@ class State:
     '''
     state_type: StateType
     values: int
-    # NOTE values must be 2 if the state type is binary and within [3, 8] otherwise
-
+    # TODO values must be 2 if the state type is binary and >= 3 otherwise
 
 @dataclass
 class DungeonConfig:
@@ -150,7 +143,6 @@ class DungeonConfig:
     h: int # Height of the rooms rectangle
     states: List[State]
     final_total_states: List[TotalState]
-
 
 G = TypeVar('G')
 class Graph(Generic[G]):
@@ -257,9 +249,7 @@ class Graph(Generic[G]):
                 edges.append((n1, n2))
         return edges
 
-
 # GENERATE STATE GRAPH SECTION
-
 
 def generate_all_total_states(config: DungeonConfig) -> List[TotalState]:
     '''
@@ -284,7 +274,6 @@ def generate_all_total_states(config: DungeonConfig) -> List[TotalState]:
             break
     return results
 
-
 def get_nodes_with_state_and_value(state_graph: Graph, state: int, value: int) -> List[TotalState]:
     '''
     Returns a list of state nodes with the given value for the given state
@@ -298,7 +287,6 @@ def modified_state_node(node: TotalState, state: int, value: int) -> TotalState:
     modified = copy.deepcopy(node)
     modified.set(state, value)
     return modified
-
 
 def assign_state_change_edges(
     state_graph: Graph,
@@ -350,14 +338,6 @@ def assign_state_change_edges(
             for node in nodes:
                 state_graph.add_edge(node, modified_state_node(node, state_index, next_value))
 
-    # Nonbinary state with no way to change back
-    if state.state_type == StateType.NUMERIC_IRREVERSIBLE.value:
-        nodes = get_nodes_with_state_and_value(state_graph, state_index, 0)
-        for node in nodes:
-            for value in range(1, state.values):
-                state_graph.add_edge(node, modified_state_node(node, state_index, value))
-
-
 def generate_state_graph(config: DungeonConfig) -> Graph:
     '''
     Generates a state graph by taking a random walk through the
@@ -391,7 +371,6 @@ def generate_state_graph(config: DungeonConfig) -> Graph:
         node = node1
     return state_graph
 
-
 def get_total_state_delta(config: DungeonConfig, t1: TotalState, t2: TotalState) -> TotalStateDelta:
     '''
     Returns a total state delta object derived from the difference between two total states
@@ -419,16 +398,13 @@ def get_all_total_state_deltas(state_graph: Graph, config: DungeonConfig) -> Lis
         deltas.add(get_total_state_delta(config, n1, n2))
     return list(deltas)
 
-
 # GENERATE DUNGEON GRAPH SECTION
-
 
 def get_room_node_names(w: int, h: int) -> List[int]:
     '''
     Generates a list of names for w * h room graph nodes
     '''
     return list(range(w * h))
-
 
 def get_adjacent_rooms(room: int, w: int, h: int) -> List[int]:
     '''
@@ -446,7 +422,6 @@ def get_adjacent_rooms(room: int, w: int, h: int) -> List[int]:
     if y < h - 1:
         neighbors.append(room + w)
     return neighbors
-
 
 def make_enclaves(room_graph: Graph, n: int, w: int, h: int) -> List[Enclave]:
     '''
@@ -546,9 +521,7 @@ def walk_state_graph_and_connect_enclaves(config: DungeonConfig, state_graph: Gr
             if please_queue not in visited and please_queue not in queued:
                 queued.append((node, node1))
 
-
 # MAIN SECTION
-
 
 def generate_dungeon():
     '''
@@ -599,7 +572,6 @@ def generate_dungeon():
 
     print('ENCLAVE TRAVERSAL')
     walk_state_graph_and_connect_enclaves(config, state_graph)
-
 
 if __name__ == '__main__':
     generate_dungeon()

@@ -1,7 +1,12 @@
 # Puzzlebox Dungeon Generation Algorithm
-Algorithm that can create dungeons like those seen in the Zelda series.
+Algorithm that can create templates for dungeons like those seen in the Zelda series.
 These dungeons contain state that the player can (and must) change as they progress from the beginning to the end.
-Such state includes reversible switches, tertiary and higher state (i.e. the water level in OoT's Water Temple), and generic locked doors with keys.
+Such state includes the following examples:
+- Binary reversible: On/off switches
+- Binary irreversible: Retrieving a special dungeon item
+- Binary cyclic: A pair of on/off switches that each go one direction
+- Numeric reversible: A switch with a set of options
+- Numeric cyclic: A pair of switches that each go one direction
 
 ## Usage
 
