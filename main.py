@@ -163,6 +163,9 @@ class Graph(Generic[G]):
             if node in v:
                 v.remove(node)
 
+    def has_node(self, node: G) -> bool:
+        return node in self._nodes
+
     def add_edge(self, n1: G, n2: G, bidirectional = False) -> ():
         if n1 not in self._edges:
             self._edges[n1] = set()
@@ -255,19 +258,6 @@ def modified_state_node(node: TotalState, state: int, value: int) -> TotalState:
     return modified
 
 
-def random_subset(lst: List) -> List:
-    '''
-    Returns a random subset (or at least size 1) of the input list
-    '''
-    results = []
-    for x in lst:
-        if random.randint(0,1) == 0:
-            results.append(x)
-    if len(results) == 0:
-        results.append(lst[random.randint(0, len(lst) - 1)])
-    return results
-
-
 def assign_state_change_edges(
     state_graph: Graph,
     state: Tuple[StateType, int],
@@ -278,29 +268,29 @@ def assign_state_change_edges(
     '''
     # Binary state that can the player can switch back and forth at will
     if state.state_type == StateType.BINARY_REVERSIBLE.value:
-        nodes = random_subset(get_nodes_with_state_and_value(state_graph, state_index, 0))
+        nodes = get_nodes_with_state_and_value(state_graph, state_index, 0)
         for node in nodes:
             state_graph.add_edge(node, modified_state_node(node, state_index, 1), True)
 
     # Binary state that the player can only change in one direction at a time
     if state.state_type == StateType.BINARY_CYCLIC.value:
-        nodes = random_subset(get_nodes_with_state_and_value(state_graph, state_index, 0))
+        nodes = get_nodes_with_state_and_value(state_graph, state_index, 0)
         for node in nodes:
             state_graph.add_edge(node, modified_state_node(node, state_index, 1))
 
-        nodes = random_subset(get_nodes_with_state_and_value(state_graph, state_index, 1))
+        nodes = get_nodes_with_state_and_value(state_graph, state_index, 1)
         for node in nodes:
             state_graph.add_edge(node, modified_state_node(node, state_index, 0))
 
     # Binary state with no way to change back
     if state.state_type == StateType.BINARY_IRREVERSIBLE.value:
-        nodes = random_subset(get_nodes_with_state_and_value(state_graph, state_index, 0))
+        nodes = get_nodes_with_state_and_value(state_graph, state_index, 0)
         for node in nodes:
             state_graph.add_edge(node, modified_state_node(node, state_index, 1))
 
     # Nonbinary state that can the player can alter at will
     if state.state_type == StateType.NUMERIC_REVERSIBLE.value:
-        nodes = random_subset(get_nodes_with_state_and_value(state_graph, state_index, 0))
+        nodes = get_nodes_with_state_and_value(state_graph, state_index, 0)
         for node in nodes:
             for value in range(state.values - 1):
                 for value1 in range(value + 1, state.values):
@@ -313,41 +303,48 @@ def assign_state_change_edges(
     # Nonbinary state that the player can only change in one direction at a time
     if state.state_type == StateType.NUMERIC_CYCLIC.value:
         for value in range(state.values):
-            nodes = random_subset(get_nodes_with_state_and_value(state_graph, state_index, value))
+            nodes = get_nodes_with_state_and_value(state_graph, state_index, value)
             next_value = 0 if value + 1 == state.values else value + 1
-            prev_value = state.values - 1 if value == 0 else value - 1
             for node in nodes:
-                new_value = next_value if random.randint(0, 1) == 0 else prev_value
-                state_graph.add_edge(node, modified_state_node(node, state_index, new_value))
+                state_graph.add_edge(node, modified_state_node(node, state_index, next_value))
 
     # Nonbinary state with no way to change back
     if state.state_type == StateType.NUMERIC_IRREVERSIBLE.value:
-        nodes = random_subset(get_nodes_with_state_and_value(state_graph, state_index, 0))
+        nodes = get_nodes_with_state_and_value(state_graph, state_index, 0)
         for node in nodes:
             for value in range(1, state.values):
                 state_graph.add_edge(node, modified_state_node(node, state_index, value))
 
 
-T = TypeVar('T')
-def take_all_walks(state_graph: Graph, initial: T) -> Tuple[List[T], List[T]]:
-    '''
-    Takes all paths through the graph and returns any
-    dead-ends (leaf nodes) as well as all visited nodes
-    '''
-    leaf_nodes = []
-    all_nodes = [initial]
-    please_visit = [(initial, None)]
-    while len(please_visit) > 0:
-        node, prev = please_visit.pop(0)
-        next_nodes = state_graph.get_next_nodes(node)
-        if len(next_nodes) == 0 or (len(next_nodes) == 1 and prev in next_nodes):
-            leaf_nodes.append(node)
-            continue
-        unvisited_next = list(filter(lambda x: x not in all_nodes, next_nodes))
-        for unvisited in unvisited_next:
-            please_visit.append((unvisited, node))
-            all_nodes.append(unvisited)
-    return (leaf_nodes, all_nodes)
+def generate_state_graph(config: DungeonConfig) -> Graph:
+    state_graph = Graph()
+
+    # Populate the proto state graph from all possible total states
+    proto_graph = Graph()
+    for state in generate_all_total_states(config):
+        proto_graph.add_node(state)
+
+    # Use state types from config to populate some edges in the proto state graph
+    for i, state_change in enumerate(config.states):
+        assign_state_change_edges(proto_graph, state_change, i)
+
+    # Populate the state graph as a random walk through the proto graph
+    node = proto_graph.get_nodes()[0]
+    state_graph.add_node(node)
+    while node not in config.final_total_states:
+        next_nodes = list(filter(
+            lambda x: not state_graph.has_node(x),
+            proto_graph.get_next_nodes(node)
+        ))
+        print(len(next_nodes))
+        if not len(next_nodes):
+            raise RuntimeError('Did not find path to a final total state node')
+        node1 = next_nodes[random.randint(0, len(next_nodes) - 1)]
+        state_graph.add_node(node1)
+        state_graph.add_edge(node, node1, proto_graph.is_bidirectional(node, node1))
+        node = node1
+    return state_graph
+
 
 def get_total_state_delta(config: DungeonConfig, t1: TotalState, t2: TotalState) -> TotalStateDelta:
     '''
@@ -460,9 +457,6 @@ def make_enclaves(room_graph: Graph, n: int, w: int, h: int) -> List[Enclave]:
     enclaves.sort(key = lambda e: len(e.nodes), reverse = True)
     return enclaves
 
-# TODO does this algorithm work if there are multiple edges coming from a state node?
-#      Review with more complicated state graphs, and perhaps rework state graph generation
-#      to only generate a single non-branching path.
 def walk_state_graph_and_connect_enclaves(config: DungeonConfig, state_graph: Graph) -> ():
     '''
     Traverses through the state graph and returns all the total state
@@ -516,43 +510,15 @@ def generate_dungeon():
     '''
     random.seed(2020) # TODO remove this later
     config = DungeonConfig(
-        5, 4,
-        [State('numeric cyclic', 3), State('binary reversible', 2)],
-        [TotalState.from_list([2, 1])]
+        6, 6,
+        [State('numeric cyclic', 3), State('binary reversible', 2), State('binary irreversible', 2)],
+        [TotalState.from_list([2, 1, 1])]
     )
 
     # TODO read and validate dungeon config from a JSON file
 
-    # Create a state node for every possible combination of dungeon state (based on config values)
-    state_graph = Graph()
-    all_states = generate_all_total_states(config)
-    for state in all_states:
-        state_graph.add_node(state)
-
-    # Use state change types from config to populate some edges in the state traversal graph
-    for i, state_change in enumerate(config.states):
-        assign_state_change_edges(state_graph, state_change, i)
-
-    # Get the initial and final state nodes
-    initial_node = state_graph.get_nodes()[0]
-
-    # Prune any state nodes (and their edges) that are not navigable from the initial state node
-    leaf_nodes, all_nodes = take_all_walks(state_graph, initial_node)
-    for node in state_graph.get_nodes():
-        if node not in all_nodes:
-            state_graph.remove_node(node)
-
-    # Prune any leaf nodes that aren't part the final total state
-    nodes_to_prune = list(filter(lambda x: x not in config.final_total_states, leaf_nodes))
-    while len(nodes_to_prune) > 0:
-        for node in nodes_to_prune:
-            state_graph.remove_node(node)
-        leaf_nodes, _ = take_all_walks(state_graph, initial_node)
-        nodes_to_prune = list(filter(lambda x: x not in config.final_total_states, leaf_nodes))
-
-    # TODO double check that the initial node has a path to some final
-    #      node and fix that if it doesn't
-
+    # Get the state graph and extract unique total state deltas from its edges
+    state_graph = generate_state_graph(config)
     total_state_deltas = get_all_total_state_deltas(state_graph, config)
 
     # Print the state graph
