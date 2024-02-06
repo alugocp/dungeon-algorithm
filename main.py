@@ -45,18 +45,30 @@ class TotalState:
 
     @staticmethod
     def from_list(ls: List[int]):
+        '''
+        Instantiates a new TotalState with some list for the values
+        '''
         ts = TotalState(len(ls))
         for i, val in enumerate(ls):
             ts.set(i, val)
         return ts
 
     def set(self, index: int, value: int):
+        '''
+        Sets the value at index
+        '''
         self._values[index] = value
 
     def get(self, index: int) -> int:
+        '''
+        Gets the value at index
+        '''
         return self._values[index]
 
     def inc(self, index: int):
+        '''
+        Increments the value at index
+        '''
         self._values[index] = self._values[index] + 1
 
     def __str__(self):
@@ -153,9 +165,15 @@ class Graph(Generic[G]):
         self._edges = {}
 
     def add_node(self, node: G) -> ():
+        '''
+        Add a node to the graph
+        '''
         self._nodes.append(node)
 
     def remove_node(self, node: G) -> ():
+        '''
+        Remove a node and its edges from the graph
+        '''
         self._nodes.remove(node)
         if node in self._edges:
             del self._edges[node]
@@ -164,9 +182,15 @@ class Graph(Generic[G]):
                 v.remove(node)
 
     def has_node(self, node: G) -> bool:
+        '''
+        Returns True if this graph contains the node in question
+        '''
         return node in self._nodes
 
     def add_edge(self, n1: G, n2: G, bidirectional = False) -> ():
+        '''
+        Add an edge between two nodes in this graph (optional bidirectionality)
+        '''
         if n1 not in self._edges:
             self._edges[n1] = set()
         self._edges[n1].add(n2)
@@ -176,15 +200,24 @@ class Graph(Generic[G]):
             self._edges[n2].add(n1)
 
     def remove_edge(self, n1: G, n2: G, bidirectional = False) -> ():
+        '''
+        Remove an edge between two nodes in the graph (optional bidirectionality)
+        '''
         self._edges[n1].remove(n2)
         if bidirectional:
             self._edges[n2].remove(n1)
 
     def is_bidirectional(self, n1: G, n2: G) -> bool:
+        '''
+        Returns True if the edge between these two nodes is bidirectional
+        '''
         return n1 in self._edges and n2 in self._edges and \
             n2 in self._edges[n1] and n1 in self._edges[n2]
 
     def print(self) -> ():
+        '''
+        Prints all nodes and edges in this graph (differentiates for bidirectionality)
+        '''
         sys.stdout.write('Nodes: ')
         sys.stdout.write(', '.join(list(map(str, self._nodes))))
         sys.stdout.write('\nEdges:\n')
@@ -201,14 +234,23 @@ class Graph(Generic[G]):
             print(edge)
 
     def get_next_nodes(self, node: G) -> List[G]:
+        '''
+        Returns all nodes that the given node points to
+        '''
         if node not in self._edges:
             return []
         return list(self._edges[node])
 
     def get_nodes(self) -> List[G]:
+        '''
+        Return all nodes in this graph
+        '''
         return self._nodes
 
     def get_edges(self) -> List[Tuple[G, G]]:
+        '''
+        Returns a node tuple for every edge in this graph
+        '''
         edges = []
         for n1, n2s in self._edges.items():
             for n2 in n2s:
@@ -317,6 +359,11 @@ def assign_state_change_edges(
 
 
 def generate_state_graph(config: DungeonConfig) -> Graph:
+    '''
+    Generates a state graph by taking a random walk through the
+    "proto" state graph (made up of all total states and the edges
+    between them based on state in the dungeon config)
+    '''
     state_graph = Graph()
 
     # Populate the proto state graph from all possible total states
@@ -336,8 +383,7 @@ def generate_state_graph(config: DungeonConfig) -> Graph:
             lambda x: not state_graph.has_node(x),
             proto_graph.get_next_nodes(node)
         ))
-        print(len(next_nodes))
-        if not len(next_nodes):
+        if len(next_nodes) == 0:
             raise RuntimeError('Did not find path to a final total state node')
         node1 = next_nodes[random.randint(0, len(next_nodes) - 1)]
         state_graph.add_node(node1)
@@ -511,7 +557,11 @@ def generate_dungeon():
     random.seed(2020) # TODO remove this later
     config = DungeonConfig(
         6, 6,
-        [State('numeric cyclic', 3), State('binary reversible', 2), State('binary irreversible', 2)],
+        [
+            State('numeric cyclic', 3),
+            State('binary reversible', 2),
+            State('binary irreversible', 2)
+        ],
         [TotalState.from_list([2, 1, 1])]
     )
 
@@ -542,12 +592,12 @@ def generate_dungeon():
     room_graph.print()
     print('')
 
-    print('Enclaves:')
+    print('ENCLAVES')
     for enclave in enclaves:
         print(f'• {enclave}')
     print('')
 
-    print('Enclave traversal:')
+    print('ENCLAVE TRAVERSAL')
     walk_state_graph_and_connect_enclaves(config, state_graph)
 
 
