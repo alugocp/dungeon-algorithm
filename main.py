@@ -4,31 +4,12 @@ This module implements the dungeon generation algorithm
 import sys
 import math
 import copy
+import json
 import random
 from typing import List, Tuple, Dict, Set, TypeVar, Generic
 from dataclasses import dataclass
 from enum import Enum
-
-# Terms:
-# • State is some variable (binary or numerical) that affects your progression through the dungeon
-# • Total state is the sum of all states in the dungeon
-# • Value is one of several possibilities that a state can be in at a given time
-# • State type describes how a state can change with respect to the player's position in the dungeon
-#
-# Set up state graph:
-# • Read input config to get types of state change and final state(s)
-# • Calculate all possible states and create nodes for them
-# • Use the types of state change to add edges to the state nodes
-# • Make sure all state paths converge upon a final state
-# • Prune disconnected state nodes
-#
-# Generate dungeon layout:
-# • Create W x H rooms (nodes) and generate an enclave for each unique state change + 1
-#   (final room's enclave)
-# • Assign each enclave (minus the last one) to some state change
-# • At each state node, connect the enclave represented by its edges to the enclave(s)
-#   represented by the connected state node's edges with a conditional passage
-# • Throw in some one-way doors to "earlier" enclaves (based on state graph path traversal order)
+import jsonschema
 
 # TYPES AND CONSTANTS SECTION
 
@@ -132,7 +113,6 @@ class State:
     '''
     state_type: StateType
     values: int
-    # TODO values must be 2 if the state type is binary and >= 3 otherwise
 
 @dataclass
 class DungeonConfig:
@@ -523,22 +503,65 @@ def walk_state_graph_and_connect_enclaves(config: DungeonConfig, state_graph: Gr
 
 # MAIN SECTION
 
+def load_config(filepath: str) -> DungeonConfig:
+    '''
+    Loads and validates dungeon configuration from a JSON file
+    '''
+    schema = {
+        'type': 'object',
+        'properties': {
+            'width': { 'type': 'number' },
+            'height': { 'type': 'number' },
+            'state': {
+                'type': 'array',
+                'items': {
+                    'type': 'object',
+                    'properties': {
+                        'type': { 'enum': [ x.value for x in  StateType ] },
+                        'values': { 'type': 'number' }
+                    }
+                }
+            },
+            'final_total_state': {
+                'type': 'array',
+                'items': { 'type': 'number' }
+            }
+        }
+    }
+
+    # Open JSON file and validate the schema
+    with open(filepath, 'r', encoding = 'utf-8') as file:
+        data = json.loads(file.read())
+    jsonschema.validate(instance = data, schema = schema)
+
+    # Validate a few other details
+    for state in data['state']:
+        if 'binary' in state['type'] and state['values'] != 2:
+            raise RuntimeError('Invalid config: binary states can only have 2 values')
+        if 'numeric' in state['type'] and state['values'] < 3:
+            raise RuntimeError('Invalid config: numeric states must have at least 3 values')
+
+    if len(data['state']) != len(data['final_total_state']):
+        raise RuntimeError('Invalid config: final_total_state must contain a value for every entry in state')
+
+    for i, value in enumerate(data['final_total_state']):
+        if value >= data['state'][i]['values']:
+            raise RuntimeError('Invalid config: each entry in final_total_config must be <= the corresponding state\'s values field')
+
+    return DungeonConfig(
+        data['width'],
+        data['height'],
+        list(map(lambda x: State(x['type'], x['values']), data['state'])),
+        [TotalState.from_list(data['final_total_state'])]
+    )
+
 def generate_dungeon():
     '''
     Runs the entire algorithm to generate a dungeon
     '''
-    random.seed(2020) # TODO remove this later
-    config = DungeonConfig(
-        6, 6,
-        [
-            State('numeric cyclic', 3),
-            State('binary reversible', 2),
-            State('binary irreversible', 2)
-        ],
-        [TotalState.from_list([2, 1, 1])]
-    )
-
-    # TODO read and validate dungeon config from a JSON file
+    if len(sys.argv) < 2:
+        raise RuntimeError('Too few command line arguments')
+    config = load_config(sys.argv[1])
 
     # Get the state graph and extract unique total state deltas from its edges
     state_graph = generate_state_graph(config)

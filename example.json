@@ -1,0 +1,19 @@
+{
+    "width": 6,
+    "height": 6,
+    "state": [
+        {
+            "type": "numeric cyclic",
+            "values": 3
+        },
+        {
+            "type": "binary reversible",
+            "values": 2
+        },
+        {
+            "type": "binary irreversible",
+            "values": 2
+        }
+    ],
+    "final_total_state": [2, 1, 1]
+}
