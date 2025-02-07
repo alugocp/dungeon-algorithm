@@ -41,6 +41,19 @@ class Graph(Generic[N, E]):
         if not directional:
             self.edges[self.get_edge_hash(n2, n1)] = label
 
+    def get_node(self, n: N) -> N:
+        """
+        Returns the first node in this Graph that matches the given node
+        """
+        return next(filter(lambda x: x == n, self.nodes))
+
+    def get_edge(self, n1: N, n2: N) -> E | None:
+        """
+        Returns the label on the edge between the given nodes
+        """
+        key = self.get_edge_hash(n1, n2)
+        return self.edges[key] if key in self.edges else None
+
     def get_edge_hash(self, n1: N, n2: N) -> str:
         """
         Returns a unique value for the edge between the given nodes
@@ -83,10 +96,33 @@ class Graph(Generic[N, E]):
                     r = ">" if right else "-"
                     l = "<" if left else "-"
                     result += f"\n  {n1} {l}-{r} {n2}"
+                    el2r = self.get_edge(n1, n2)
+                    er2l = self.get_edge(n2, n1)
+                    if el2r == er2l:
+                        if el2r is not None:
+                            result += f" ({el2r})"
+                    else:
+                        if el2r is not None:
+                            result += "f ({el2r})>"
+                        if er2l is not None:
+                            result += "f <({er2l})"
                     edges = True
         if not edges:
             result += " N/A"
         return result
+
+
+class PrettyPrintSet(set):
+    """
+    A set that actually stringifies its elements
+    """
+
+    def __init__(self, parent):
+        for x in parent:
+            self.add(x)
+
+    def __str__(self) -> str:
+        return "{" + ", ".join([str(x) for x in self]) + "}"
 
 
 @dataclass
@@ -200,16 +236,21 @@ class Enclave:
     """
 
     mechanism: StateDiff | None
-    turned_on: list[State] = []
+    turned_on: set[State]
 
     def __init__(self, mechanism: StateDiff | None):
         self.mechanism = mechanism
+        self.turned_on = set()
 
     def __str__(self) -> str:
-        return "Boss" if self.mechanism is None else str(self.mechanism)
+        return (
+            ("Boss" if self.mechanism is None else str(self.mechanism))
+            + " "
+            + str(PrettyPrintSet(self.turned_on))
+        )
 
     def __eq__(self, other: Self) -> bool:
-        return self.mechanism == other.mechanism
+        return other is not None and self.mechanism == other.mechanism
 
     def __hash__(self) -> int:
         return 0 if self.mechanism is None else hash(self.mechanism)
@@ -224,12 +265,12 @@ class Enclave:
         """
         Adds a State in which this Enclave will be accessible
         """
-        self.turned_on.append(s)
+        self.turned_on.add(s)
 
 
 # Convenient type definitions
 StateGraph = Graph[State, None]
-Dungeon = Graph[Enclave, None]
+Dungeon = Graph[Enclave, PrettyPrintSet[State]]
 
 
 def generate_state_graph(initial_state: State) -> StateGraph:
@@ -255,12 +296,36 @@ def get_enclaves(state_walk) -> Dungeon:
     Returns a Graph of dungeon Enclaves without any edges yet
     """
     g: Dungeon = Graph()
+    inert: set[Enclave] = set()
     for i in range(1, len(state_walk)):
         diff = state_walk[i] - state_walk[i - 1]
-        if Enclave(diff) not in g.nodes:
-            g.add_node(Enclave(diff))
-    g.add_node(Enclave(None))
+        enclave = Enclave(diff)
+        newly_inert = None
+        if enclave in g.nodes:
+            enclave = g.get_node(enclave)
+        else:
+            g.add_node(enclave)
+            if not diff.relevant().reversible:
+                newly_inert = enclave
+                inert.add(enclave)
+        enclave.add_state(state_walk[i - 1])
+        enclave.add_state(state_walk[i])
+        for e in filter(lambda x: x != newly_inert, inert):
+            e.add_state(state_walk[i])
+    boss = Enclave(None)
+    g.add_node(boss)
+    boss.add_state(state_walk[-1])
     return g
+
+
+def add_conditional_doors(d: Dungeon):
+    """
+    Adds conditional doors as edges in a Graph of Enclaves
+    """
+    for i1 in range(len(d.nodes) - 1):
+        for i2 in range(i1, len(d.nodes)):
+            intersection = PrettyPrintSet(d.nodes[i1].turned_on & d.nodes[i2].turned_on)
+            d.add_edge(d.nodes[i1], d.nodes[i2], intersection)
 
 
 def main(initial_state: State):
@@ -277,9 +342,10 @@ def main(initial_state: State):
     print(", ".join(map(str, state_walk)))
     print("")
 
-    enclaves = get_enclaves(state_walk)
-    print("ENCLAVES")
-    print(enclaves)
+    dungeon = get_enclaves(state_walk)
+    add_conditional_doors(dungeon)
+    print("DUNGEON")
+    print(dungeon)
 
 
 if __name__ == "__main__":
