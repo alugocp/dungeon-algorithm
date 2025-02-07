@@ -10,6 +10,42 @@ from dataclasses import dataclass
 from math import inf
 
 
+class Styled:
+    """
+    Wrapper for ANSI terminal escaped strings
+    """
+
+    BOLD = "1"
+    FAINT = "2"
+    UNDERLINE = "4"
+    GREEN = "32"
+    codes: list[str]
+
+    def __init__(self, obj):
+        self.obj = obj
+        self.codes = []
+
+    def __str__(self) -> str:
+        return (
+            self.to_escape_sequence(self.codes)
+            + str(self.obj)
+            + self.to_escape_sequence(["0"])
+        )
+
+    def add(self, code: str) -> Self:
+        """
+        Adds a stylistic element to this object
+        """
+        self.codes.append(code)
+        return self
+
+    def to_escape_sequence(self, codes: list[str]) -> str:
+        """
+        Returns an ANSI escape sequence
+        """
+        return "\x1b[" + ";".join(codes) + "m"
+
+
 # Generic type definitions for the Graph class
 N = TypeVar("N")
 E = TypeVar("E")
@@ -84,7 +120,12 @@ class Graph(Generic[N, E]):
         return walk
 
     def __str__(self) -> str:
-        result = "Nodes: " + ", ".join(list(map(str, self.nodes))) + "\nEdges:"
+        result = (
+            str(Styled("Nodes: ").add(Styled.BOLD))
+            + ", ".join(list(map(str, self.nodes)))
+            + "\n"
+            + str(Styled("Edges:").add(Styled.BOLD))
+        )
         edges = False
         for i1 in range(len(self.nodes) - 1):
             for i2 in range(i1 + 1, len(self.nodes)):
@@ -95,17 +136,22 @@ class Graph(Generic[N, E]):
                 if right or left:
                     r = ">" if right else "-"
                     l = "<" if left else "-"
-                    result += f"\n  {n1} {l}-{r} {n2}"
+                    result += (
+                        "\n  "
+                        + str(Styled(n1).add(Styled.GREEN))
+                        + f" {l}-{r} "
+                        + str(Styled(n2).add(Styled.GREEN))
+                    )
                     el2r = self.get_edge(n1, n2)
                     er2l = self.get_edge(n2, n1)
                     if el2r == er2l:
                         if el2r is not None:
-                            result += f" ({el2r})"
+                            result += " (" + str(Styled(el2r).add(Styled.GREEN)) + ")"
                     else:
                         if el2r is not None:
-                            result += "f ({el2r})>"
+                            result += " (" + str(Styled(el2r).add(Styled.GREEN)) + ")>"
                         if er2l is not None:
-                            result += "f <({er2l})"
+                            result += " <(" + str(Styled(er2l).add(Styled.GREEN)) + ")"
                     edges = True
         if not edges:
             result += " N/A"
@@ -246,7 +292,7 @@ class Enclave:
         return (
             ("Boss" if self.mechanism is None else str(self.mechanism))
             + " "
-            + str(PrettyPrintSet(self.turned_on))
+            + str(Styled(PrettyPrintSet(self.turned_on)).add(Styled.FAINT))
         )
 
     def __eq__(self, other: Self) -> bool:
@@ -333,18 +379,18 @@ def main(initial_state: State):
     Generates and displays a new dungeon
     """
     state_graph = generate_state_graph(initial_state)
-    print("STATE GRAPH")
+    print(Styled("State Graph").add(Styled.UNDERLINE))
     print(state_graph)
     print("")
 
     state_walk = state_graph.random_walk()
-    print("STATE WALK")
-    print(", ".join(map(str, state_walk)))
+    print(Styled("State Walk").add(Styled.UNDERLINE))
+    print(" -> ".join(map(str, state_walk)))
     print("")
 
     dungeon = get_enclaves(state_walk)
     add_conditional_doors(dungeon)
-    print("DUNGEON")
+    print(Styled("Dungeon Enclaves").add(Styled.UNDERLINE))
     print(dungeon)
 
 
