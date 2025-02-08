@@ -6,8 +6,10 @@ from typing import Generic, TypeVar, Self
 from itertools import chain, combinations
 from dataclasses import dataclass
 from functools import reduce
+from sys import argv, exit
 from random import choice
 from copy import deepcopy
+from re import fullmatch
 from math import inf
 
 
@@ -22,29 +24,12 @@ class Styled:
     GREEN = "32"
     codes: list[str]
 
-    def __init__(self, obj):
+    def __init__(self, obj, codes):
         self.obj = obj
-        self.codes = []
+        self.codes = codes
 
     def __str__(self) -> str:
-        return (
-            self.to_escape_sequence(self.codes)
-            + str(self.obj)
-            + self.to_escape_sequence(["0"])
-        )
-
-    def add(self, code: str) -> Self:
-        """
-        Adds a stylistic element to this object
-        """
-        self.codes.append(code)
-        return self
-
-    def to_escape_sequence(self, codes: list[str]) -> str:
-        """
-        Returns an ANSI escape sequence
-        """
-        return "\x1b[" + ";".join(codes) + "m"
+        return "\x1b[" + ";".join(self.codes) + "m" + str(self.obj) + "\x1b[0m"
 
 
 # Generic type definitions for the Graph class
@@ -122,10 +107,10 @@ class Graph(Generic[N, E]):
 
     def __str__(self) -> str:
         result = (
-            str(Styled("Nodes: ").add(Styled.BOLD))
+            str(Styled("Nodes: ", [Styled.BOLD]))
             + ", ".join(list(map(str, self.nodes)))
             + "\n"
-            + str(Styled("Edges:").add(Styled.BOLD))
+            + str(Styled("Edges:", [Styled.BOLD]))
         )
         edges = False
         for i1 in range(len(self.nodes) - 1):
@@ -139,20 +124,20 @@ class Graph(Generic[N, E]):
                     l = "<" if left else "-"
                     result += (
                         "\n  "
-                        + str(Styled(n1).add(Styled.GREEN))
+                        + str(Styled(n1, [Styled.GREEN]))
                         + f" {l}-{r} "
-                        + str(Styled(n2).add(Styled.GREEN))
+                        + str(Styled(n2, [Styled.GREEN]))
                     )
                     el2r = self.get_edge(n1, n2)
                     er2l = self.get_edge(n2, n1)
                     if el2r == er2l:
                         if el2r is not None:
-                            result += " (" + str(Styled(el2r).add(Styled.GREEN)) + ")"
+                            result += " (" + str(Styled(el2r, [Styled.GREEN])) + ")"
                     else:
                         if el2r is not None:
-                            result += " (" + str(Styled(el2r).add(Styled.GREEN)) + ")>"
+                            result += " (" + str(Styled(el2r, [Styled.GREEN])) + ")>"
                         if er2l is not None:
-                            result += " <(" + str(Styled(er2l).add(Styled.GREEN)) + ")"
+                            result += " <(" + str(Styled(er2l, [Styled.GREEN])) + ")"
                     edges = True
         if not edges:
             result += " N/A"
@@ -195,7 +180,10 @@ class State:
 
     def __str__(self) -> str:
         return "".join(
-            [["F", "T"][x.value] if x.states == 2 else x.value for x in self.state_vars]
+            [
+                ["F", "T"][x.value] if x.states == 2 else str(x.value)
+                for x in self.state_vars
+            ]
         )
 
     def all_are_max(self) -> bool:
@@ -266,7 +254,7 @@ class PartialState(State):
                 (
                     "."
                     if x.value is None
-                    else (["F", "T"][x.value] if x.states == 2 else x.value)
+                    else (["F", "T"][x.value] if x.states == 2 else str(x.value))
                 )
                 for x in self.state_vars
             ]
@@ -371,7 +359,7 @@ class Enclave:
         return (
             ("Boss" if self.mechanism is None else str(self.mechanism))
             + " "
-            + str(Styled(PrettyPrintSet(self.turned_on)).add(Styled.FAINT))
+            + str(Styled(PrettyPrintSet(self.turned_on), [Styled.FAINT]))
         )
 
     def __eq__(self, other: Self) -> bool:
@@ -467,11 +455,11 @@ def simplify_conditional_doors(d: Dungeon):
             for subset in common.get_subsets():
                 if subset.matches_none(diff):
                     print(
-                        str(Styled(d.nodes[i1]).add(Styled.GREEN))
+                        str(Styled(d.nodes[i1], [Styled.GREEN]))
                         + " <-> "
-                        + str(Styled(d.nodes[i2]).add(Styled.GREEN))
+                        + str(Styled(d.nodes[i2], [Styled.GREEN]))
                         + " ("
-                        + str(Styled(intersection).add(Styled.GREEN))
+                        + str(Styled(intersection, [Styled.GREEN]))
                         + f") ---> {subset}"
                     )
                     break
@@ -482,24 +470,51 @@ def main(initial_state: State):
     Generates and displays a new dungeon
     """
     state_graph = generate_state_graph(initial_state)
-    print(Styled("State Graph").add(Styled.UNDERLINE))
+    print(Styled("State Graph", [Styled.UNDERLINE]))
     print(state_graph)
     print("")
 
     state_walk = state_graph.random_walk()
-    print(Styled("State Walk").add(Styled.UNDERLINE))
+    print(Styled("State Walk", [Styled.UNDERLINE]))
     print(" -> ".join(map(str, state_walk)))
     print("")
 
     dungeon = get_enclaves(state_walk)
     add_conditional_doors(dungeon)
-    print(Styled("Dungeon Enclaves").add(Styled.UNDERLINE))
+    print(Styled("Dungeon Enclaves", [Styled.UNDERLINE]))
     print(dungeon)
     print("")
 
-    print(Styled("Simplified Passages").add(Styled.UNDERLINE))
+    print(Styled("Simplified Passages", [Styled.UNDERLINE]))
     simplify_conditional_doors(dungeon)
 
 
+def print_help():
+    """
+    Displays usage options and an explanation of this CLI tool
+    """
+    desc = "".join(
+        [
+            "Usage:\n"
+            "  python3 main.py [ri][0-9]+(:[ri][0-9]+)*\n\n"
+            "This CLI tool generates state-based puzzle dungeon layouts like those in the Zelda series. "
+            "It inputs a description of the state variables to be navigated in the output dungeon. "
+            "This description must match the regex provided above, where r is for a reversible state variable "
+            "(like a switch that can be turned on and off), "
+            "and i is for an irreversible state variable (like obtaining some special item). "
+            "the number tells this program how many values a state variable can have.\n\n"
+            "Happy crawling!"
+        ]
+    )
+    print(desc)
+
+
 if __name__ == "__main__":
-    main(State([StateVar(False, 2), StateVar(False, 2), StateVar(True, 2)]))
+    if len(argv) != 2 or not fullmatch("[ri][0-9]+(:[ri][0-9]+)*", argv[1]):
+        print_help()
+        exit(1)
+
+    input_vars = list(
+        map(lambda x: StateVar(x[0] == "r", int(x[1:])), argv[1].split(":"))
+    )
+    main(State(input_vars))
