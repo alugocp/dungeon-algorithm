@@ -465,6 +465,24 @@ def simplify_conditional_doors(d: Dungeon):
                     break
 
 
+def squish_state_walk(state_walk: list[State]) -> list[State]:
+    """
+    Removes redundant state changes within this state walk
+    """
+    a = 1
+    prev_diff = None
+    while a < len(state_walk):
+        diff = state_walk[a] - state_walk[a - 1]
+        if prev_diff is not None and diff.state_vars.index(
+            diff.relevant()
+        ) == prev_diff.state_vars.index(prev_diff.relevant()):
+            state_walk.pop(a)
+        else:
+            a += 1
+        prev_diff = diff
+    return state_walk
+
+
 def main(initial_state: State):
     """
     Generates and displays a new dungeon
@@ -474,7 +492,7 @@ def main(initial_state: State):
     print(state_graph)
     print("")
 
-    state_walk = state_graph.random_walk()
+    state_walk = squish_state_walk(state_graph.random_walk())
     print(Styled("State Walk", [Styled.UNDERLINE]))
     print(" -> ".join(map(str, state_walk)))
     print("")
