@@ -3,10 +3,11 @@ Generates puzzlebox dungeons like those seen in the Zelda series
 """
 
 from typing import Generic, TypeVar, Self
+from itertools import chain, combinations
+from dataclasses import dataclass
 from functools import reduce
 from random import choice
 from copy import deepcopy
-from dataclasses import dataclass
 from math import inf
 
 
@@ -241,6 +242,84 @@ class State:
             state_vars[i].value = self.state_vars[i].value - other.state_vars[i].value
         return StateDiff(state_vars)
 
+    @staticmethod
+    def common(states: list[Self]) -> Self:
+        """
+        Returns a PartialState with only the StateVars that these States have in common
+        """
+        result = deepcopy(states[0].state_vars)
+        for state in states[1:]:
+            for i in range(len(state.state_vars)):
+                if state.state_vars[i].value != result[i].value:
+                    result[i].value = None
+        return PartialState(result)
+
+
+class PartialState(State):
+    """
+    Represents a subset of a global State
+    """
+
+    def __str__(self) -> str:
+        return "".join(
+            [
+                (
+                    "."
+                    if x.value is None
+                    else (["F", "T"][x.value] if x.states == 2 else x.value)
+                )
+                for x in self.state_vars
+            ]
+        )
+
+    def matches(self, other: State) -> bool:
+        """
+        Returns True if this PartialState contains similar values to the given State
+        """
+        return reduce(
+            lambda acc, i: acc
+            and (self.state_vars[i].value in [None, other.state_vars[i].value]),
+            list(range(len(self.state_vars))),
+            True,
+        )
+
+    def matches_none(self, states: set[State]) -> bool:
+        """
+        Returns True if this PartialState does not match any of the given States
+        """
+        for s in states:
+            if self.matches(s):
+                return False
+        return True
+
+    def get_subsets(self) -> list[State]:
+        """
+        Grabs all possible subsets of this PartialState objects, ordered from least cardinality to highest
+        """
+        result: list[State] = []
+        relevant_indices = list(
+            filter(
+                lambda x: x is not None,
+                [
+                    None if self.state_vars[i].value is None else i
+                    for i in range(len(self.state_vars))
+                ],
+            )
+        )
+        powerset = chain.from_iterable(
+            combinations(relevant_indices, x) for x in range(len(relevant_indices) + 1)
+        )
+        next(powerset)
+        basis = deepcopy(self.state_vars)
+        for var in basis:
+            var.value = None
+        for p in powerset:
+            rehydrated = deepcopy(basis)
+            for i in list(p):
+                rehydrated[i].value = self.state_vars[i].value
+            result.append(PartialState(rehydrated))
+        return result
+
 
 class StateDiff(State):
     """
@@ -374,6 +453,30 @@ def add_conditional_doors(d: Dungeon):
             d.add_edge(d.nodes[i1], d.nodes[i2], intersection)
 
 
+def simplify_conditional_doors(d: Dungeon):
+    """
+    Simplifies the State needed to pass between Enclaves
+    """
+    for i1 in range(len(d.nodes) - 1):
+        for i2 in range(i1 + 1, len(d.nodes)):
+            intersection = d.get_edge(d.nodes[i1], d.nodes[i2])
+            if len(intersection) == 0:
+                continue
+            diff = (d.nodes[i1].turned_on | d.nodes[i2].turned_on) - intersection
+            common = State.common(list(intersection))
+            for subset in common.get_subsets():
+                if subset.matches_none(diff):
+                    print(
+                        str(Styled(d.nodes[i1]).add(Styled.GREEN))
+                        + " <-> "
+                        + str(Styled(d.nodes[i2]).add(Styled.GREEN))
+                        + " ("
+                        + str(Styled(intersection).add(Styled.GREEN))
+                        + f") ---> {subset}"
+                    )
+                    break
+
+
 def main(initial_state: State):
     """
     Generates and displays a new dungeon
@@ -392,6 +495,10 @@ def main(initial_state: State):
     add_conditional_doors(dungeon)
     print(Styled("Dungeon Enclaves").add(Styled.UNDERLINE))
     print(dungeon)
+    print("")
+
+    print(Styled("Simplified Passages").add(Styled.UNDERLINE))
+    simplify_conditional_doors(dungeon)
 
 
 if __name__ == "__main__":
