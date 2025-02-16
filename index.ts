@@ -1,3 +1,6 @@
+/**
+ * The basic unit tracking dungeon state
+ */
 type StateVar = {
     id: string;
     states: number;
@@ -5,6 +8,9 @@ type StateVar = {
     reversible: boolean;
 };
 
+/**
+ * A collection of StateVars
+ */
 class State {
     readonly vars: StateVar[];
 
@@ -26,9 +32,15 @@ class State {
     toString = (): string =>
         `\u001b[32m${this.vars.reduce((acc, v) => `${acc}${v.id}${v.value}`, "")}\u001b[0m`;
 
+    /**
+     * Returns a subset of this State with StateVars that have been (or can be) changed
+     */
     relevant = (): State =>
         new State(...this.vars.filter((x) => x.reversible || x.value > 0));
 
+    /**
+     * Returns true if this State's StateVars satisfy the values provided by the given State
+     */
     satisfies = (s: State): boolean =>
         s.vars.reduce(
             (acc, x) =>
@@ -36,6 +48,9 @@ class State {
             true,
         );
 
+    /**
+     * Returns true if this State is logically equal to the given State
+     */
     equals = (s: State): boolean =>
         this.vars.length === s.vars.length &&
         this.vars.reduce(
@@ -45,17 +60,29 @@ class State {
         );
 }
 
+/**
+ * Represents a set of rooms in the dungeon that are mutually accessible
+ */
 class Enclave {
     constructor(public readonly mechanism: StateVar) {}
 
     toString = (): string =>
         `\u001b[32m${this.mechanism.id}\u001b[0m(\u001b[2m${this.mechanism.reversible ? `r${this.mechanism.states}` : "b"}\u001b[0m)`;
 
+    /**
+     * Returns true if this Enclave can still change the dungeon state
+     */
     mutable = (): boolean =>
         this.mechanism.reversible || this.mechanism.value === 0;
 
+    /**
+     * Returns true if this Enclave is logically equal to the given Enclave
+     */
     equals = (s: Enclave): boolean => this.mechanism.id === s.mechanism.id;
 
+    /**
+     * Returns a version of this Enclave's StateVar after it has been modified
+     */
     activated(currentState: State): StateVar {
         let value = Math.floor(Math.random() * (this.mechanism.states - 1)) + 1;
         if (this.mechanism.reversible) {
@@ -74,11 +101,17 @@ class Enclave {
     }
 }
 
+/**
+ * Convenience type of both an Enclave and a State
+ */
 type EnclaveAndState = {
     enclave: Enclave;
     state: State;
 };
 
+/**
+ * Basic implementation of a graph, used to represent a dungeon
+ */
 class Graph {
     edges: { src: Enclave; dst: Enclave; label: State }[] = [];
     nodes: Enclave[] = [];
@@ -101,11 +134,17 @@ class Graph {
         return result;
     }
 
+    /**
+     * Adds a conditional doorway (represented by a State) between two Enclaves
+     */
     addEdge(src: Enclave, dst: Enclave, label: State) {
         this.edges.push({ src, dst, label });
         this.edges.push({ src: dst, dst: src, label });
     }
 
+    /**
+     * Returns the accessible Enclaves (and any resulting States at those locations) given the initial Enclave and State
+     */
     getAccessibleEnclaves(start: EnclaveAndState): EnclaveAndState[] {
         const adjacent: EnclaveAndState[] = [start];
         const visited: EnclaveAndState[] = [start];
@@ -147,6 +186,9 @@ class Graph {
         return visited;
     }
 
+    /**
+     * Returns a list of all possible States after travelling from the starting Enclave to the destination
+     */
     getStatesFromPath = (
         initialState: State,
         src: Enclave,
@@ -160,8 +202,14 @@ class Graph {
             .map((x) => x.state);
 }
 
+/**
+ * Returns a random element from the given array
+ */
 const choice = <E>(a: E[]): E => a[Math.floor(Math.random() * a.length)];
 
+/**
+ * Returns all alternate values for the given StateVar
+ */
 function getAlternates(sv: StateVar): StateVar[] {
     if (sv.reversible) {
         const alternates: StateVar[] = [];
@@ -173,6 +221,9 @@ function getAlternates(sv: StateVar): StateVar[] {
     return sv.value === 0 ? [sv, { ...sv, value: 1 }] : [sv];
 }
 
+/**
+ * Builds a dungeon from the given initial State
+ */
 function buildDungeon(initialState: State): { graph: Graph; state: State } {
     const graph = new Graph();
     let currentState: State = initialState;
@@ -218,43 +269,50 @@ function buildDungeon(initialState: State): { graph: Graph; state: State } {
     return { graph, state: currentState };
 }
 
-if (
-    process.argv.length != 3 ||
-    !process.argv[2].match(/^(b|(r[0-9]+))(:(b|(r[0-9]+)))*$/)
-) {
-    console.log(
-        [
-            "Usage:\n",
-            "  python3 main.py [ri][0-9]+(:[ri][0-9]+)*\n\n",
-            "This CLI tool generates state-based puzzle dungeon layouts like those in the Zelda series. ",
-            "It inputs a description of the state variables to be navigated in the output dungeon. ",
-            "This description must match the regex provided above, where r is for a reversible state variable ",
-            "(like a switch that can be turned on and off), ",
-            "and i is for an irreversible state variable (like obtaining some special item). ",
-            "the number tells this program how many values a state variable can have.\n\n",
-            "Happy crawling!",
-        ].join(""),
+/**
+ * Entry point for the algorithm
+ */
+function main() {
+    if (
+        process.argv.length != 3 ||
+        !process.argv[2].match(/^(b|(r[0-9]+))(:(b|(r[0-9]+)))*$/)
+    ) {
+        console.log(
+            [
+                "Usage:\n",
+                "  python3 main.py [ri][0-9]+(:[ri][0-9]+)*\n\n",
+                "This CLI tool generates state-based puzzle dungeon layouts like those in the Zelda series. ",
+                "It inputs a description of the state variables to be navigated in the output dungeon. ",
+                "This description must match the regex provided above, where r is for a reversible state variable ",
+                "(like a switch that can be turned on and off), ",
+                "and i is for an irreversible state variable (like obtaining some special item). ",
+                "the number tells this program how many values a state variable can have.\n\n",
+                "Happy crawling!",
+            ].join(""),
+        );
+        process.exit(1);
+    }
+
+    const { graph: dungeon, state: finalState } = buildDungeon(
+        new State(
+            ...process.argv[2].split(":").map((x: string, i: number) => ({
+                reversible: x[0] === "r",
+                id: String.fromCharCode(65 + i),
+                states: x[0] === "b" ? 2 : parseInt(x.substring(1)),
+                value: 0,
+            })),
+        ),
     );
-    process.exit(1);
+    console.log(dungeon.toString());
+    console.log("\u001b[1mUnused enclaves:\u001b[0m");
+    let unused = false;
+    for (const x of finalState.vars.filter((x) => !x.reversible && !x.value)) {
+        console.log(new Enclave(x).toString());
+        unused = true;
+    }
+    if (!unused) {
+        console.log("\u001b[2mNo enclaves\u001b[0m");
+    }
 }
 
-const { graph: dungeon, state: finalState } = buildDungeon(
-    new State(
-        ...process.argv[2].split(":").map((x: string, i: number) => ({
-            reversible: x[0] === "r",
-            id: String.fromCharCode(65 + i),
-            states: x[0] === "b" ? 2 : parseInt(x.substring(1)),
-            value: 0,
-        })),
-    ),
-);
-console.log(dungeon.toString());
-console.log("\u001b[1mUnused doorways:\u001b[0m");
-let unused = false;
-for (const x of finalState.vars.filter((x) => !x.reversible && !x.value)) {
-    console.log(new State({ ...x, value: 1 }).toString());
-    unused = true;
-}
-if (!unused) {
-    console.log("\u001b[2mNo unused doorways\u001b[0m");
-}
+main();
