@@ -200,6 +200,16 @@ class Graph {
         })
             .filter((x) => x.enclave.equals(dst))
             .map((x) => x.state);
+
+    getUnusedStateVars = (): StateVar[] =>
+        this.nodes
+            .map((x) => x.mechanism)
+            .filter(
+                (x) =>
+                    !this.edges.some((y) =>
+                        y.label.vars.some((z) => x.id === z.id),
+                    ),
+            );
 }
 
 /**
@@ -224,7 +234,7 @@ function getAlternates(sv: StateVar): StateVar[] {
 /**
  * Builds a dungeon from the given initial State
  */
-function buildDungeon(initialState: State): { graph: Graph; state: State } {
+function buildDungeon(initialState: State): Graph {
     const graph = new Graph();
     let currentState: State = initialState;
     graph.nodes.push(new Enclave(initialState.vars[0]));
@@ -266,7 +276,7 @@ function buildDungeon(initialState: State): { graph: Graph; state: State } {
         currentState = new State(...currentState.vars, ...conditions);
         currentEnclave = enclave;
     }
-    return { graph, state: currentState };
+    return graph;
 }
 
 /**
@@ -293,7 +303,7 @@ function main() {
         process.exit(1);
     }
 
-    const { graph: dungeon, state: finalState } = buildDungeon(
+    const dungeon = buildDungeon(
         new State(
             ...process.argv[2].split(":").map((x: string, i: number) => ({
                 reversible: x[0] === "r",
@@ -306,7 +316,7 @@ function main() {
     console.log(dungeon.toString());
     console.log("\u001b[1mUnused enclaves:\u001b[0m");
     let unused = false;
-    for (const x of finalState.vars.filter((x) => !x.reversible && !x.value)) {
+    for (const x of dungeon.getUnusedStateVars()) {
         console.log(new Enclave(x).toString());
         unused = true;
     }

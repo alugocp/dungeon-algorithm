@@ -16,7 +16,7 @@ npm install
 npx prettier -w index.js
 
 # Run the algorithm
-npm start [ri][0-9]+(:[ri][0-9]+)*
+npm start (b|(r[0-9]+))(:(b|(r[0-9]+)))*
 ```
 
 ## Explanation
