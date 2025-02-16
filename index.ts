@@ -24,7 +24,7 @@ class State {
     }
 
     toString = (): string =>
-        this.vars.reduce((acc, v) => `${acc}${v.id}${v.value}`, "");
+        `\u001b[32m${this.vars.reduce((acc, v) => `${acc}${v.id}${v.value}`, "")}\u001b[0m`;
 
     relevant = (): State =>
         new State(...this.vars.filter((x) => x.reversible || x.value > 0));
@@ -49,7 +49,7 @@ class Enclave {
     constructor(public readonly mechanism: StateVar) {}
 
     toString = (): string =>
-        `${this.mechanism.id}(${this.mechanism.reversible ? `r${this.mechanism.states}` : "b"})`;
+        `\u001b[32m${this.mechanism.id}\u001b[0m(\u001b[2m${this.mechanism.reversible ? `r${this.mechanism.states}` : "b"}\u001b[0m)`;
 
     mutable = (): boolean =>
         this.mechanism.reversible || this.mechanism.value === 0;
@@ -74,7 +74,7 @@ class Graph {
     nodes: Enclave[] = [];
 
     toString(): string {
-        let result = `Enclaves: ${this.nodes.join(", ")}\nDoorways:\n`;
+        let result = `\u001b[1mEnclaves:\u001b[0m ${this.nodes.join(", ")}\n\u001b[1mDoorways:\u001b[0m\n`;
         for (let a = 0; a < this.edges.length; a++) {
             const e = this.edges[a];
             const before = this.edges.some(
@@ -85,7 +85,7 @@ class Graph {
                     i < a,
             );
             if (!before) {
-                result += `  ${e.src} <-${e.label}-> ${e.dst}\n`;
+                result += `  ${e.src} <-- ${e.label} --> ${e.dst}\n`;
             }
         }
         return result;
