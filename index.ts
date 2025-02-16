@@ -48,6 +48,14 @@ class State {
             })),
         );
     }
+
+    satisfies(s: State): boolean {
+        return s.vars.reduce(
+            (acc, x) =>
+                acc && this.vars.find((y) => y.id == x.id)?.value == x.value,
+            true,
+        );
+    }
 }
 
 type Enclave = State;
@@ -58,7 +66,7 @@ type EnclaveAndState = {
 };
 
 class Graph {
-    edges: { src: Enclave; dst: Enclave; label: State }[] = [];
+    edges: { src: Enclave; dst: Enclave; label: State | null }[] = [];
     nodes: Enclave[] = [];
 
     toString(): string {
@@ -96,12 +104,17 @@ class Graph {
         const visited: EnclaveAndState[] = [start];
         while (adjacent.length > 0) {
             const current: EnclaveAndState = adjacent.pop()!;
-            const neighbors = this.edges.filter(
-                (x) => x.src == current.enclave,
+            const neighbors = this.edges.filter((x) =>
+                x.src == current.enclave && x.label
+                    ? current.state.satisfies(x.label)
+                    : true,
             );
             for (const n of neighbors) {
                 const transformed: EnclaveAndState = {
-                    state: new State(...current.state.vars, ...n.label.vars),
+                    state: new State(
+                        ...current.state.vars,
+                        ...(n.label?.vars ?? []),
+                    ),
                     enclave: n.dst,
                 };
                 if (!visited.some((x) => equals(transformed, x))) {
@@ -111,6 +124,35 @@ class Graph {
             }
         }
         return visited;
+    }
+
+    getStateFromPath(
+        initialState: State,
+        src: Enclave,
+        dst: Enclave,
+    ): State | null {
+        const accessible = this.getAccessibleEnclaves({
+            state: initialState,
+            enclave: src,
+        });
+        const valid = accessible.filter((x) => equals(x.enclave, dst));
+        return valid.length > 0 ? choice(valid).state : null;
+    }
+
+    getStateFromLoop(
+        initialState: State,
+        src: Enclave,
+        dst: Enclave,
+        diff: State | null,
+    ): State | null {
+        const state = this.getStateFromPath(initialState, src, dst);
+        return state
+            ? this.getStateFromPath(
+                  new State(...state.vars, ...(diff ? diff.vars : [])),
+                  dst,
+                  src,
+              )
+            : null;
     }
 }
 
@@ -167,8 +209,39 @@ for (let a = 1; a < initialState.vars.length; a++) {
         }),
     );
     const condition = doorway.enclave.changed();
-    currentState = new State(...currentState.vars, ...condition.vars);
+    const loop = graph.getStateFromLoop(
+        currentState,
+        anchor,
+        doorway.enclave,
+        condition,
+    );
     graph.nodes.push(enclave);
+    if (loop?.satisfies(condition)) {
+        currentState = loop;
+    } else if (graph.getStateFromPath(currentState, condition, anchor)) {
+        const diff = anchor.changed();
+        graph.edges.push({
+            src: anchor,
+            dst: condition,
+            label: diff,
+        });
+        graph.edges.push({
+            src: condition,
+            dst: anchor,
+            label: diff,
+        });
+        currentState = new State(
+            ...graph.getStateFromPath(
+                new State(...currentState.vars, ...diff.vars),
+                condition,
+                anchor,
+            )!.vars,
+            ...condition.vars,
+        );
+    } else {
+        // Add another mechanism to the anchor enclave?
+        throw new Error("Uh oh :(");
+    }
     graph.edges.push({
         src: anchor,
         dst: enclave,
