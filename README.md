@@ -8,17 +8,15 @@ State variables have the following properties:
 ## Usage
 
 ```bash
-# Install requirements
-python3 -m pip install pylint black
-
-# Lint the code
-python3 -m pylint main.py
+# Install (development) requirements
+git config core.hooksPath .husky
+npm install
 
 # Reformat the code
-python3 -m black main.py
+npx prettier -w index.js
 
 # Run the algorithm
-python3 main.py [ri][0-9]+(:[ri][0-9]+)*
+npm start [ri][0-9]+(:[ri][0-9]+)*
 ```
 
 ## Explanation

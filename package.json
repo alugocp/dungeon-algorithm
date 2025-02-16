@@ -1,0 +1,21 @@
+{
+  "name": "dungeon-algorithm",
+  "version": "1.0.0",
+  "description": "Algorithm that can create templates for dungeons like those seen in the Zelda series",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alugocp/dungeon-algorithm.git"
+  },
+  "author": "Alex Lugo",
+  "scripts": {
+    "start": "tsx index.ts"
+  },
+  "dependencies": {
+    "tsx": "^4.19.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "husky": "^9.1.7",
+    "prettier": "^3.5.1"
+  }
+}
