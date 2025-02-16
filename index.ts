@@ -27,28 +27,6 @@ class State {
         return this.vars.reduce((acc, v) => `${acc}${v.id}${v.value}`, "");
     }
 
-    toEnclaveString(): string {
-        return this.vars.reduce((acc, v) => `${acc}${v.id}`, "");
-    }
-
-    toFinalString(): string {
-        return this.vars.reduce(
-            (acc, v) => `${acc}${v.id}(${v.reversible ? "r" : "i"}${v.states})`,
-            "",
-        );
-    }
-
-    changed(): State {
-        return new State(
-            ...this.vars.map((x: StateVar) => ({
-                ...x,
-                value: x.reversible
-                    ? Math.floor(Math.random() * x.states)
-                    : Math.floor(Math.random() * (x.states - 1)) + 1,
-            })),
-        );
-    }
-
     relevant(): State {
         return new State(
             ...this.vars.filter((x) => x.reversible || x.value > 0),
@@ -64,7 +42,22 @@ class State {
     }
 }
 
-type Enclave = State;
+class Enclave {
+    constructor(public readonly mechanism: StateVar) {}
+
+    toString(): string {
+        return `${this.mechanism.id}(${this.mechanism.reversible ? "r" : "i"}${this.mechanism.states})`;
+    }
+
+    changed(): State {
+        return new State({
+            ...this.mechanism,
+            value: this.mechanism.reversible
+                ? Math.floor(Math.random() * this.mechanism.states)
+                : Math.floor(Math.random() * (this.mechanism.states - 1)) + 1,
+        });
+    }
+}
 
 type EnclaveAndState = {
     enclave: Enclave;
@@ -76,7 +69,7 @@ class Graph {
     nodes: Enclave[] = [];
 
     toString(): string {
-        let result = `Enclaves: ${this.nodes.map((x) => x.toFinalString()).join(", ")}\nDoorways:\n`;
+        let result = `Enclaves: ${this.nodes.join(", ")}\nDoorways:\n`;
         for (let a = 0; a < this.edges.length; a++) {
             const e = this.edges[a];
             const before = this.edges.some(
@@ -86,20 +79,8 @@ class Graph {
                     equals(x.label, e.label) &&
                     i < a,
             );
-            const after = this.edges.some(
-                (x, i) =>
-                    equals(x.src, e.dst) &&
-                    equals(x.dst, e.src) &&
-                    equals(x.label, e.label) &&
-                    i > a,
-            );
-            if (before) {
-                continue;
-            }
-            if (after) {
-                result += `  ${e.src.toEnclaveString()} <-${e.label}-> ${e.dst.toEnclaveString()}\n`;
-            } else {
-                result += `  ${e.src.toEnclaveString()} --${e.label}-> ${e.dst.toEnclaveString()}\n`;
+            if (!before) {
+                result += `  ${e.src} <-${e.label}-> ${e.dst}\n`;
             }
         }
         return result;
@@ -114,23 +95,45 @@ class Graph {
         const adjacent: EnclaveAndState[] = [start];
         const visited: EnclaveAndState[] = [start];
         while (adjacent.length > 0) {
-            const current: EnclaveAndState = adjacent.pop()!;
-            const neighbors = this.edges.filter((x) =>
-                x.src == current.enclave && x.label
-                    ? current.state.satisfies(x.label)
-                    : true,
-            );
-            for (const n of neighbors) {
-                const transformed: EnclaveAndState = {
-                    state: new State(
-                        ...current.state.vars,
-                        ...(n.label?.vars ?? []),
-                    ),
-                    enclave: n.dst,
-                };
-                if (!visited.some((x) => equals(transformed, x))) {
-                    adjacent.push(transformed);
-                    visited.push(transformed);
+            const root: EnclaveAndState = adjacent.pop()!;
+            const alternates: EnclaveAndState[] = [];
+            if (root.enclave.mechanism.reversible) {
+                for (let a = 0; a < root.enclave.mechanism.states; a++) {
+                    alternates.push({
+                        enclave: root.enclave,
+                        state: new State(...root.state.vars, {
+                            ...root.enclave.mechanism,
+                            value: a,
+                        }),
+                    });
+                }
+            } else {
+                alternates.push({
+                    enclave: root.enclave,
+                    state: new State(...root.state.vars, {
+                        ...root.enclave.mechanism,
+                        value: 1,
+                    }),
+                });
+            }
+            for (const current of alternates) {
+                const neighbors = this.edges.filter((x) =>
+                    x.src === current.enclave && x.label
+                        ? current.state.satisfies(x.label)
+                        : true,
+                );
+                for (const n of neighbors) {
+                    const transformed: EnclaveAndState = {
+                        state: new State(
+                            ...current.state.vars,
+                            ...n.label.vars,
+                        ),
+                        enclave: n.dst,
+                    };
+                    if (!visited.some((x) => equals(transformed, x))) {
+                        adjacent.push(transformed);
+                        visited.push(transformed);
+                    }
                 }
             }
         }
@@ -209,7 +212,7 @@ const initialState: State = new State(
 
 const graph = new Graph();
 let currentState: State = initialState;
-graph.nodes.push(new State(initialState.vars[0]));
+graph.nodes.push(new Enclave(initialState.vars[0]));
 let currentEnclave = graph.nodes[0];
 for (let a = 1; a < initialState.vars.length; a++) {
     const anchor: Enclave = choice(graph.nodes);
@@ -226,7 +229,7 @@ for (let a = 1; a < initialState.vars.length; a++) {
         }
     }
 
-    const enclave: Enclave = new State(initialState.vars[a]);
+    const enclave: Enclave = new Enclave(initialState.vars[a]);
     const doorway: EnclaveAndState = choice(
         graph.getAccessibleEnclaves({
             state: currentState,
@@ -244,9 +247,9 @@ for (let a = 1; a < initialState.vars.length; a++) {
     graph.addEdge(anchor, enclave, condition);
     if (loop?.satisfies(condition)) {
         currentState = loop;
-    } else if (anchor.toEnclaveString() !== condition.toEnclaveString()) {
+    } else if (anchor.mechanism.id !== condition.vars[0].id) {
         const diff = anchor.changed();
-        graph.addEdge(anchor, condition, diff);
+        graph.addEdge(anchor, new Enclave(condition.vars[0]), diff);
         currentState = new State(...currentState.vars, ...diff.vars);
     }
     currentEnclave = enclave;
