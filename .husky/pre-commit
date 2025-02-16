@@ -2,7 +2,7 @@
 staged="$(git diff --name-only --cached --diff-filter=d)"
 
 # Run the prettier tool
-npx prettier -w index.js
+npx prettier -w index.ts
 
 # Add any files that were already staged
 git add $staged
