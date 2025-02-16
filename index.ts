@@ -39,8 +39,8 @@ class State {
     equals = (s: State): boolean =>
         this.vars.length === s.vars.length &&
         this.vars.reduce(
-            (acc: boolean, x: StateVar, i: number) =>
-                acc && x.id === s.vars[i].id && x.value === s.vars[i].value,
+            (acc: boolean, x: StateVar) =>
+                acc && s.vars.some((y) => y.id === x.id && y.value === x.value),
             true,
         );
 }
@@ -56,12 +56,22 @@ class Enclave {
 
     equals = (s: Enclave): boolean => this.mechanism.id === s.mechanism.id;
 
-    activated = (): StateVar => ({
-        ...this.mechanism,
-        value: this.mechanism.reversible
-            ? Math.floor(Math.random() * this.mechanism.states)
-            : Math.floor(Math.random() * (this.mechanism.states - 1)) + 1,
-    });
+    activated(currentState: State): StateVar {
+        let value = Math.floor(Math.random() * (this.mechanism.states - 1)) + 1;
+        if (this.mechanism.reversible) {
+            const current = currentState.vars.find(
+                (x) => x.id === this.mechanism.id,
+            )!.value;
+            value = Math.floor(Math.random() * (this.mechanism.states - 1));
+            if (value >= current) {
+                value++;
+            }
+        }
+        return {
+            ...this.mechanism,
+            value,
+        };
+    }
 }
 
 type EnclaveAndState = {
@@ -163,7 +173,7 @@ function getAlternates(sv: StateVar): StateVar[] {
     return sv.value === 0 ? [sv, { ...sv, value: 1 }] : [sv];
 }
 
-function buildDungeon(initialState: State): Graph {
+function buildDungeon(initialState: State): { graph: Graph; state: State } {
     const graph = new Graph();
     let currentState: State = initialState;
     graph.nodes.push(new Enclave(initialState.vars[0]));
@@ -189,7 +199,7 @@ function buildDungeon(initialState: State): Graph {
             } else {
                 graph.addEdge(currentEnclave, diff, currentState.relevant());
             }
-            const activated = diff.activated();
+            const activated = diff.activated(currentState);
             currentEnclave = diff;
             conditions.push(activated);
             currentState = new State(...currentState.vars, activated);
@@ -202,8 +212,10 @@ function buildDungeon(initialState: State): Graph {
         }
         graph.nodes.push(enclave);
         graph.addEdge(anchor, enclave, new State(...conditions));
+        currentState = new State(...currentState.vars, ...conditions);
+        currentEnclave = enclave;
     }
-    return graph;
+    return { graph, state: currentState };
 }
 
 if (
@@ -226,7 +238,7 @@ if (
     process.exit(1);
 }
 
-const dungeon = buildDungeon(
+const { graph: dungeon, state: finalState } = buildDungeon(
     new State(
         ...process.argv[2].split(":").map((x: string, i: number) => ({
             reversible: x[0] === "r",
@@ -237,3 +249,12 @@ const dungeon = buildDungeon(
     ),
 );
 console.log(dungeon.toString());
+console.log("\u001b[1mUnused doorways:\u001b[0m");
+let unused = false;
+for (const x of finalState.vars.filter((x) => !x.reversible && !x.value)) {
+    console.log(new State({ ...x, value: 1 }).toString());
+    unused = true;
+}
+if (!unused) {
+    console.log("\u001b[2mNo unused doorways\u001b[0m");
+}
