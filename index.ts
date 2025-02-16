@@ -36,8 +36,19 @@ class State {
     satisfies(s: State): boolean {
         return s.vars.reduce(
             (acc, x) =>
-                acc && this.vars.find((y) => y.id == x.id)?.value == x.value,
+                acc && this.vars.find((y) => y.id === x.id)?.value === x.value,
             true,
+        );
+    }
+
+    equals(s: State): boolean {
+        return (
+            this.vars.length === s.vars.length &&
+            this.vars.reduce(
+                (acc: boolean, x: StateVar, i: number) =>
+                    acc && x.id === s.vars[i].id && x.value === s.vars[i].value,
+                true,
+            )
         );
     }
 }
@@ -57,6 +68,13 @@ class Enclave {
                 : Math.floor(Math.random() * (this.mechanism.states - 1)) + 1,
         });
     }
+
+    equals(s: Enclave): boolean {
+        return (
+            this.mechanism.id === s.mechanism.id &&
+            this.mechanism.value === s.mechanism.value
+        );
+    }
 }
 
 type EnclaveAndState = {
@@ -74,9 +92,9 @@ class Graph {
             const e = this.edges[a];
             const before = this.edges.some(
                 (x, i) =>
-                    equals(x.src, e.dst) &&
-                    equals(x.dst, e.src) &&
-                    equals(x.label, e.label) &&
+                    x.src.equals(e.dst) &&
+                    x.dst.equals(e.src) &&
+                    x.label.equals(e.label) &&
                     i < a,
             );
             if (!before) {
@@ -117,10 +135,10 @@ class Graph {
                 });
             }
             for (const current of alternates) {
-                const neighbors = this.edges.filter((x) =>
-                    x.src === current.enclave && x.label
-                        ? current.state.satisfies(x.label)
-                        : true,
+                const neighbors = this.edges.filter(
+                    (x) =>
+                        x.src.equals(current.enclave) &&
+                        current.state.satisfies(x.label),
                 );
                 for (const n of neighbors) {
                     const transformed: EnclaveAndState = {
@@ -130,7 +148,13 @@ class Graph {
                         ),
                         enclave: n.dst,
                     };
-                    if (!visited.some((x) => equals(transformed, x))) {
+                    if (
+                        !visited.some(
+                            (x) =>
+                                transformed.enclave.equals(x.enclave) &&
+                                transformed.state.equals(x.state),
+                        )
+                    ) {
                         adjacent.push(transformed);
                         visited.push(transformed);
                     }
@@ -149,7 +173,7 @@ class Graph {
             state: initialState,
             enclave: src,
         });
-        const valid = accessible.filter((x) => equals(x.enclave, dst));
+        const valid = accessible.filter((x) => x.enclave.equals(dst));
         return valid.length > 0 ? choice(valid).state : null;
     }
 
@@ -169,15 +193,6 @@ class Graph {
             : null;
     }
 }
-
-const equals = (x: any, y: any) =>
-    x &&
-    y &&
-    typeof x === "object" &&
-    typeof y === "object" &&
-    Object.keys(x).length === Object.keys(y).length
-        ? Object.keys(x).reduce((acc, k) => acc && equals(x[k], y[k]), true)
-        : x === y;
 
 const choice = <E>(a: E[]): E => a[Math.floor(Math.random() * a.length)];
 
