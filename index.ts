@@ -49,6 +49,12 @@ class State {
         );
     }
 
+    relevant(): State {
+        return new State(
+            ...this.vars.filter((x) => x.reversible || x.value > 0),
+        );
+    }
+
     satisfies(s: State): boolean {
         return s.vars.reduce(
             (acc, x) =>
@@ -66,7 +72,7 @@ type EnclaveAndState = {
 };
 
 class Graph {
-    edges: { src: Enclave; dst: Enclave; label: State | null }[] = [];
+    edges: { src: Enclave; dst: Enclave; label: State }[] = [];
     nodes: Enclave[] = [];
 
     toString(): string {
@@ -97,6 +103,11 @@ class Graph {
             }
         }
         return result;
+    }
+
+    addEdge(src: Enclave, dst: Enclave, label: State) {
+        this.edges.push({ src, dst, label });
+        this.edges.push({ src: dst, dst: src, label });
     }
 
     getAccessibleEnclaves(start: EnclaveAndState): EnclaveAndState[] {
@@ -199,9 +210,23 @@ const initialState: State = new State(
 const graph = new Graph();
 let currentState: State = initialState;
 graph.nodes.push(new State(initialState.vars[0]));
+let currentEnclave = graph.nodes[0];
 for (let a = 1; a < initialState.vars.length; a++) {
-    const enclave: Enclave = new State(initialState.vars[a]);
     const anchor: Enclave = choice(graph.nodes);
+    if (currentEnclave !== anchor) {
+        const path = graph.getStateFromPath(
+            currentState,
+            currentEnclave,
+            anchor,
+        );
+        if (path) {
+            currentState = path;
+        } else {
+            graph.addEdge(currentEnclave, anchor, currentState.relevant());
+        }
+    }
+
+    const enclave: Enclave = new State(initialState.vars[a]);
     const doorway: EnclaveAndState = choice(
         graph.getAccessibleEnclaves({
             state: currentState,
@@ -216,41 +241,14 @@ for (let a = 1; a < initialState.vars.length; a++) {
         condition,
     );
     graph.nodes.push(enclave);
+    graph.addEdge(anchor, enclave, condition);
     if (loop?.satisfies(condition)) {
         currentState = loop;
-    } else if (graph.getStateFromPath(currentState, condition, anchor)) {
+    } else if (anchor.toEnclaveString() !== condition.toEnclaveString()) {
         const diff = anchor.changed();
-        graph.edges.push({
-            src: anchor,
-            dst: condition,
-            label: diff,
-        });
-        graph.edges.push({
-            src: condition,
-            dst: anchor,
-            label: diff,
-        });
-        currentState = new State(
-            ...graph.getStateFromPath(
-                new State(...currentState.vars, ...diff.vars),
-                condition,
-                anchor,
-            )!.vars,
-            ...condition.vars,
-        );
-    } else {
-        // Add another mechanism to the anchor enclave?
-        throw new Error("Uh oh :(");
+        graph.addEdge(anchor, condition, diff);
+        currentState = new State(...currentState.vars, ...diff.vars);
     }
-    graph.edges.push({
-        src: anchor,
-        dst: enclave,
-        label: condition,
-    });
-    graph.edges.push({
-        src: enclave,
-        dst: anchor,
-        label: condition,
-    });
+    currentEnclave = enclave;
 }
 console.log(graph.toString());
