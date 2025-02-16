@@ -290,15 +290,21 @@ function main() {
         console.log(
             [
                 "Usage:\n",
-                "  python3 main.py [ri][0-9]+(:[ri][0-9]+)*\n\n",
+                "  npm start (b|(r[0-9]+))(:(b|(r[0-9]+)))*\n\n",
                 "This CLI tool generates state-based puzzle dungeon layouts like those in the Zelda series. ",
                 "It inputs a description of the state variables to be navigated in the output dungeon. ",
                 "This description must match the regex provided above, where r is for a reversible state variable ",
                 "(like a switch that can be turned on and off), ",
-                "and i is for an irreversible state variable (like obtaining some special item). ",
-                "the number tells this program how many values a state variable can have.\n\n",
+                "and b is for an irreversible binary state variable (like obtaining some special item). ",
+                "the number tells this program how many values a reversible state variable can have.\n\n",
                 "Happy crawling!",
             ].join(""),
+        );
+        process.exit(1);
+    }
+    if (process.argv[2].split(":").length > 26) {
+        console.log(
+            "\u001b[1mError:\u001b[0m too many state variables (max 26)",
         );
         process.exit(1);
     }
