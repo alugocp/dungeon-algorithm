@@ -13,14 +13,24 @@ class StateValue {
 /**
  * Unit that tracks dungeon state possibilities
  */
-class StateVar {
+class StateVar extends StateValue {
     constructor(
-        public id: string,
+        id: string,
         public reversible: boolean,
         public states: number,
-    ) {}
+    ) {
+        super(id, 0);
+    }
 
-    toString = (): string =>
+    modified(): StateValue {
+        this.value = this.reversible
+            ? (Math.floor(Math.random() * (this.states - 1)) + this.value + 1) %
+              this.states
+            : Math.min(this.states - 1, this.value + 1);
+        return new StateValue(this.id, this.value);
+    }
+
+    override toString = (): string =>
         `\u001b[32m${this.id}\u001b[0m (${this.reversible ? "r" : "i"}${this.states})`;
 }
 
@@ -28,15 +38,15 @@ class StateVar {
  * Represents a single room in the dungeon
  */
 class Room {
+    ultimate = false;
+
     constructor(
         public id: number,
         public mechanism: string | null,
     ) {}
 
     toString = (): string =>
-        this.mechanism
-            ? `${this.id} (\u001b[32m${this.mechanism}\u001b[0m)`
-            : `${this.id}`;
+        `${this.id}${this.mechanism ? ` (\u001b[32m${this.mechanism}\u001b[0m)` : ""}${this.ultimate ? " 💀" : ""}`;
 }
 
 /**
@@ -44,6 +54,7 @@ class Room {
  */
 class Graph {
     edges: { src: Room; dst: Room; label: StateValue | null }[] = [];
+    parents: Record<number, number> = {};
     nodes: Room[] = [];
 
     /**
@@ -52,6 +63,16 @@ class Graph {
     addEdge(src: Room, dst: Room, label: StateValue | null) {
         this.edges.push({ src, dst, label });
         this.edges.push({ src: dst, dst: src, label });
+    }
+
+    getParent(r: Room): Room | null {
+        return (
+            this.nodes.find((x: Room) => x.id === this.parents[r.id]) ?? null
+        );
+    }
+
+    getChildren(r: Room): Room[] {
+        return this.nodes.filter((x: Room) => this.parents[x.id] === r.id);
     }
 
     toString(): string {
@@ -83,12 +104,65 @@ const choice = <E>(a: E[]): E => a[Math.floor(Math.random() * a.length)];
  */
 function buildDungeon(paddingRooms: number, stateVars: StateVar[]): Graph {
     const graph = new Graph();
+
+    // Add basic nodes and edges to the graph
     graph.nodes.push(new Room(1, null));
     for (let a = 0; a < stateVars.length + paddingRooms - 1; a++) {
         const n = new Room(a + 2, null);
-        graph.addEdge(choice(graph.nodes), n, null);
+        const parent = choice(graph.nodes);
+        graph.addEdge(parent, n, null);
         graph.nodes.push(n);
+        graph.parents[n.id] = parent.id;
     }
+
+    // Scatter state change mechanisms amongst the nodes
+    stateVars.forEach(
+        (v: StateVar) =>
+            (choice(
+                graph.nodes.filter((x: Room) => x.mechanism === null),
+            ).mechanism = v.id),
+    );
+
+    // Walk until you hit a state change mechanism,
+    // block another path behind it as a requirement
+    let visitedMechanisms: StateVar[] = [];
+    let unvisited: Room[] = [graph.nodes[0]];
+    let blocked: Room[] = [];
+    const unblock = (mechanism: StateVar | null) => {
+        const unblocked = choice(blocked);
+        graph.addEdge(
+            graph.getParent(unblocked)!,
+            unblocked,
+            (mechanism ?? choice(visitedMechanisms)).modified(),
+        );
+        blocked.splice(blocked.indexOf(unblocked), 1);
+        unvisited.push(unblocked);
+    };
+    while (unvisited.length > 0) {
+        const current: Room = choice(unvisited);
+        unvisited.splice(unvisited.indexOf(current), 1)[0];
+        if (current.mechanism === null) {
+            unvisited = unvisited.concat(graph.getChildren(current));
+            if (unvisited.length === 0 && blocked.length > 0) {
+                unblock(null);
+            }
+        } else {
+            visitedMechanisms.push(
+                stateVars.find((y: StateVar) => y.id === current.mechanism)!,
+            );
+            blocked = unvisited.concat(graph.getChildren(current));
+            unvisited = [];
+            if (blocked.length > 0) {
+                unblock(visitedMechanisms[visitedMechanisms.length - 1]);
+            }
+        }
+        if (unvisited.length === 0) {
+            current.ultimate = true;
+        }
+    }
+
+    // TODO implement the backwards one-way edges
+
     return graph;
 }
 
