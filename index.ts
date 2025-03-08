@@ -86,8 +86,15 @@ class Graph {
                     x.label?.id === e.label?.id &&
                     i < a,
             );
+            const after = this.edges.some(
+                (x, i) =>
+                    x.src.id === e.dst.id &&
+                    x.dst.id === e.src.id &&
+                    x.label?.id === e.label?.id &&
+                    i > a,
+            );
             if (!before) {
-                result += `  ${e.src} <-- ${e.label} --> ${e.dst}\n`;
+                result += `  ${e.src} ${after ? "<" : "-"}-- ${e.label} --> ${e.dst}\n`;
             }
         }
         return result;
@@ -130,11 +137,11 @@ function buildDungeon(paddingRooms: number, stateVars: StateVar[]): Graph {
     let blocked: Room[] = [];
     const unblock = (mechanism: StateVar | null) => {
         const unblocked = choice(blocked);
-        graph.addEdge(
-            graph.getParent(unblocked)!,
-            unblocked,
-            (mechanism ?? choice(visitedMechanisms)).modified(),
-        );
+        const partners = [unblocked, graph.getParent(unblocked)!];
+        const modified = (mechanism ?? choice(visitedMechanisms)).modified();
+        graph.edges
+            .filter((x) => partners.includes(x.src) && partners.includes(x.dst))
+            .forEach((x) => (x.label = modified));
         blocked.splice(blocked.indexOf(unblocked), 1);
         unvisited.push(unblocked);
     };
@@ -161,10 +168,41 @@ function buildDungeon(paddingRooms: number, stateVars: StateVar[]): Graph {
         }
     }
 
-    // TODO implement the backwards one-way edges
+    // Add some backwards one-way edges for early visibility
+    // TODO how many times should we try to do this?
+    for (let a = 0; a < 4; a++) {
+        const later = choice(graph.nodes);
+        let ancestor: Room | null = graph.getParent(later);
+        let options: Room[] = [];
+        while (ancestor !== null) {
+            const older = graph.getParent(ancestor);
+            options.push(ancestor);
+            if (older !== null) {
+                const mechanism = stateVars.find(
+                    (x: StateVar) =>
+                        x.id ===
+                        graph.edges.find(
+                            (y) =>
+                                y.src === older &&
+                                y.dst === ancestor &&
+                                y.label !== null,
+                        )?.label!.id,
+                );
+                if (mechanism?.reversible) {
+                    options = [];
+                }
+            }
+            ancestor = older;
+        }
+        if (options.length > 0) {
+            graph.edges.push({ src: later, dst: choice(options), label: null });
+        }
+    }
 
     return graph;
 }
+// TODO figure out what to do about irreversible state w/ more than 2 possible values
+// We'll have to scatter different a separate mechanism for each value change
 
 /**
  * Entry point for the algorithm
