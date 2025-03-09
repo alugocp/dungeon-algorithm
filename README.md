@@ -16,22 +16,24 @@ npm install
 npx prettier -w index.js
 
 # Run the algorithm
-npm start (b|(r[0-9]+))(:(b|(r[0-9]+)))*
+npm start [0-9][0-9]? ([ri][0-9]+)(:([ri][0-9]+))*
 ```
 
 ## Explanation
-### Enclaves
-An enclave is a set of mutually-accessible dungeon rooms.
-You don't need any keys or special state or anything to move between two rooms in the same enclave.
-There is one enclave for each state variable.
-An enclave allows you to change its state variable in the dungeon state and move between enclaves using doorways.
+### State Variables
+These keep track of changes the player can make while they progress the dungeon.
+These changes are necessary to proceed - they can be keys, switches, levers or other power-ups.
+State can be reversible (r) or irreversible (i).
+Reversible state are switches, irreversible would be keys, upgrades or other accumulative concepts.
+Some rooms are labelled with a state variables, that means that you can change the given variable in that room.
 
 ### Doorways
-Doorways connect enclaves together and are only open while the dungeon is in a satisfying state.
-The player will have to modify state variables in enclaves in order to open these doorways and progress through the dungeon.
+Doorways connect rooms together and are only open while the given state condition holds true.
+The player will have to modify state variables in rooms in order to open these doorways and progress through the dungeon.
+A doorway labelled with null means that it is always open.
+A doorway with only one arrow denotes a one-way passage.
+Those are so that players can get a sneak preview of later rooms, and are optional for the dungeon design.
 
-### Unused enclaves
-Sometimes state variables are left unrepresented in doorways.
-These are tracked in the program and logged at the end.
-The designer can place extra enclaves using these state variables in doorways.
-Extra enclaves may include a boss battle or bonus room.
+### Skull emoji
+The skull emoji denotes the "final" room of the dungeon.
+It could be a boss room or just whatever you want to put in it.

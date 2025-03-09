@@ -7,7 +7,10 @@ class StateValue {
         public value: number,
     ) {}
 
-    toString = (): string => `(${this.id} = ${this.value})`;
+    toString = (): string =>
+        this.id.length > 1
+            ? `(${this.id[0]} >= ${this.value})`
+            : `(${this.id} = ${this.value})`;
 }
 
 /**
@@ -54,7 +57,7 @@ class Room {
     ) {}
 
     toString = (): string =>
-        `${this.id}${this.mechanism ? ` (\u001b[32m${this.mechanism}\u001b[0m)` : ""}${this.ultimate ? " 💀" : ""}`;
+        `${this.id}${this.mechanism ? ` (\u001b[32m${this.mechanism[0]}\u001b[0m)` : ""}${this.ultimate ? " 💀" : ""}`;
 }
 
 /**
@@ -268,7 +271,7 @@ function main() {
             [
                 "Usage:\n",
                 "  npm start <padding rooms> <state change mechanisms>\n\n",
-                "'padding' rooms should be of the form [0-9][0-9]?",
+                "'padding' rooms should be of the form [0-9][0-9]? ",
                 "'state change mechanisms' should be of the form ([ri][0-9]+)(:([ri][0-9]+))*",
             ].join(""),
         );
