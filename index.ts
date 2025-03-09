@@ -125,11 +125,12 @@ function buildDungeon(
 
     // Add basic nodes and edges to the graph
     graph.nodes.push(new Room(1, null));
-    const mechanismRooms = initialStateVars.reduce(
-        (acc, v: StateVar) => acc + (v.reversible ? 1 : v.states - 1),
-        0,
-    );
-    for (let a = 0; a < mechanismRooms + paddingRooms - 1; a++) {
+    const numRooms =
+        initialStateVars.reduce(
+            (acc, v: StateVar) => acc + (v.reversible ? 1 : v.states - 1),
+            0,
+        ) + paddingRooms;
+    for (let a = 0; a < numRooms; a++) {
         const n = new Room(a + 2, null);
         const parent = choice(graph.nodes);
         graph.addEdge(parent, n, null);
@@ -199,13 +200,21 @@ function buildDungeon(
                 unblock(null);
             }
         } else {
-            visitedMechanisms.push(
-                stateVars.find((y: StateVar) => y.id === current.mechanism)!,
+            const currentMechanism = stateVars.find(
+                (y: StateVar) => y.id === current.mechanism,
+            )!;
+            if (!currentMechanism.reversible) {
+                visitedMechanisms = visitedMechanisms.filter(
+                    (x: StateVar) => x.id[0] !== current.mechanism?.[0],
+                );
+            }
+            visitedMechanisms.push(currentMechanism);
+            blocked = blocked.concat(
+                unvisited.concat(graph.getChildren(current)),
             );
-            blocked = unvisited.concat(graph.getChildren(current));
             unvisited = [];
             if (blocked.length > 0) {
-                unblock(visitedMechanisms[visitedMechanisms.length - 1]);
+                unblock(currentMechanism);
             }
         }
         if (unvisited.length === 0) {
@@ -214,8 +223,7 @@ function buildDungeon(
     }
 
     // Add some backwards one-way edges for early visibility
-    // TODO how many times should we try to do this?
-    for (let a = 0; a < 4; a++) {
+    for (let a = 0; a < Math.max(Math.ceil(numRooms / 2), 1); a++) {
         const later = choice(graph.nodes);
         let ancestor: Room | null = graph.getParent(later);
         let options: Room[] = [];
