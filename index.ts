@@ -18,16 +18,24 @@ class StateVar extends StateValue {
         id: string,
         public reversible: boolean,
         public states: number,
+        value = 0,
     ) {
-        super(id, 0);
+        super(id, value);
     }
 
     modified(): StateValue {
-        this.value = this.reversible
-            ? (Math.floor(Math.random() * (this.states - 1)) + this.value + 1) %
-              this.states
-            : Math.min(this.states - 1, this.value + 1);
-        return new StateValue(this.id, this.value);
+        if (this.reversible) {
+            this.value =
+                (Math.floor(Math.random() * (this.states - 1)) +
+                    this.value +
+                    1) %
+                this.states;
+            return new StateValue(this.id, this.value);
+        }
+        return new StateValue(
+            this.id,
+            Math.min(this.states - 1, this.value + 1),
+        );
     }
 
     override toString = (): string =>
@@ -109,12 +117,19 @@ const choice = <E>(a: E[]): E => a[Math.floor(Math.random() * a.length)];
 /**
  * Builds a dungeon
  */
-function buildDungeon(paddingRooms: number, stateVars: StateVar[]): Graph {
+function buildDungeon(
+    paddingRooms: number,
+    initialStateVars: StateVar[],
+): Graph {
     const graph = new Graph();
 
     // Add basic nodes and edges to the graph
     graph.nodes.push(new Room(1, null));
-    for (let a = 0; a < stateVars.length + paddingRooms - 1; a++) {
+    const mechanismRooms = initialStateVars.reduce(
+        (acc, v: StateVar) => acc + (v.reversible ? 1 : v.states - 1),
+        0,
+    );
+    for (let a = 0; a < mechanismRooms + paddingRooms - 1; a++) {
         const n = new Room(a + 2, null);
         const parent = choice(graph.nodes);
         graph.addEdge(parent, n, null);
@@ -123,6 +138,15 @@ function buildDungeon(paddingRooms: number, stateVars: StateVar[]): Graph {
     }
 
     // Scatter state change mechanisms amongst the nodes
+    const stateVars = initialStateVars
+        .map((v: StateVar) =>
+            v.reversible
+                ? [v]
+                : Array.from(Array(v.states - 1).keys()).map(
+                      (x: number) => new StateVar(v.id, false, v.states),
+                  ),
+        )
+        .reduce((acc: StateVar[], vs: StateVar[]) => acc.concat(vs), []);
     stateVars.forEach(
         (v: StateVar) =>
             (choice(
@@ -130,8 +154,29 @@ function buildDungeon(paddingRooms: number, stateVars: StateVar[]): Graph {
             ).mechanism = v.id),
     );
 
-    // Walk until you hit a state change mechanism,
-    // block another path behind it as a requirement
+    // Reassign StateVar IDs for irreversible state so the player always
+    // progresses from 1 -> ... -> N instead of a random order
+    const reassignedIrreversibleValues: Record<string, number> = {};
+    let irreversibleRoomsCheck: Room[] = [graph.nodes[0]];
+    while (irreversibleRoomsCheck.length > 0) {
+        const current = irreversibleRoomsCheck.splice(0, 1)[0];
+        const mechanism = stateVars.find(
+            (x: StateVar) => x.id === current.mechanism,
+        );
+        if (mechanism && !mechanism.reversible) {
+            const value = reassignedIrreversibleValues[current.mechanism!] ?? 0;
+            reassignedIrreversibleValues[current.mechanism!] = value + 1;
+            mechanism.id = `${mechanism.id}${value + 1}`;
+            current.mechanism = mechanism.id;
+            mechanism.value = value;
+        }
+        irreversibleRoomsCheck = irreversibleRoomsCheck.concat(
+            graph.getChildren(current),
+        );
+    }
+
+    // Walk until you hit a state change mechanism, then block another path behind
+    // it as a requirement. Continue this until you've traversed the entire dungeon.
     let visitedMechanisms: StateVar[] = [];
     let unvisited: Room[] = [graph.nodes[0]];
     let blocked: Room[] = [];
@@ -201,8 +246,6 @@ function buildDungeon(paddingRooms: number, stateVars: StateVar[]): Graph {
 
     return graph;
 }
-// TODO figure out what to do about irreversible state w/ more than 2 possible values
-// We'll have to scatter different a separate mechanism for each value change
 
 /**
  * Entry point for the algorithm
